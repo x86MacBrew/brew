@@ -6,14 +6,22 @@ require "dev-cmd/test"
 require "sandbox"
 
 RSpec.describe Homebrew::DevCmd::Test do
+  define_negated_matcher :not_matching, :matching
+
   it_behaves_like "parseable arguments"
 
-  it "tests a given Formula", :integration_test do
+  it "tests a given Formula without process-listing warnings", :integration_test do
     skip "Nested sandboxing is not supported." if Sandbox.nested_sandbox?
 
     setup_test_formula "testball", <<~'RUBY', tab_attributes: { installed_on_request: true }
       test do
         assert_equal "test", shell_output("#{bin}/test")
+        (logs/"testpath").write(testpath)
+        require "socket"
+        (testpath/"sockets").mkpath
+        UNIXServer.open("sockets/test.sock") do
+          UNIXSocket.open("sockets/test.sock", &:close)
+        end
       end
     RUBY
     formula_prefix = Formula["testball"].prefix
@@ -27,9 +35,12 @@ RSpec.describe Homebrew::DevCmd::Test do
     (HOMEBREW_LINKED_KEGS/"testball").make_relative_symlink(formula_prefix)
 
     expect { brew "test", "--verbose", "testball", "HOMEBREW_NO_INSTALL_FROM_API" => "1" }
-      .to output(/Testing testball/).to_stdout
+      .to output(a_string_matching(/Testing testball/)
+        .and(not_matching(/sysmon request failed|pgrep: Cannot get process list/))).to_stdout
       .and not_to_output.to_stderr
       .and be_a_success
+
+    expect(Pathname((Formula["testball"].logs/"testpath").read)).not_to exist
   end
 
   it "blocks network access when test phase is offline", :integration_test, :needs_sandbox do
@@ -40,6 +51,10 @@ RSpec.describe Homebrew::DevCmd::Test do
     setup_test_formula formula_name, <<~RUBY, tab_attributes: { installed_on_request: true }
       deny_network_access! :test
       test do
+        require "socket"
+        UNIXServer.open("test.sock") do
+          UNIXSocket.open("test.sock", &:close)
+        end
         system "curl", "example.org"
       end
     RUBY

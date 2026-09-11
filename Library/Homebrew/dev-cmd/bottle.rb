@@ -231,6 +231,17 @@ module Homebrew
         [mismatches, checksums]
       end
 
+      # `strings -` uses locale-dependent `isprint()`, so a match can contain invalid
+      # UTF-8. Scrub it instead of dropping it, or a build prefix could go undetected.
+      sig { params(match: String, relative_path: Pathname, offset: String).returns(String) }
+      def binary_relocation_diagnostic_string(match, relative_path, offset)
+        utf8_match = match.dup.force_encoding(Encoding::UTF_8)
+        return utf8_match if utf8_match.valid_encoding?
+
+        opoo "Scrubbing string with invalid encoding in #{relative_path} at offset 0x#{offset}"
+        utf8_match.scrub
+      end
+
       private
 
       sig {
@@ -285,7 +296,7 @@ module Homebrew
 
               diagnostic = {
                 "path"   => relative_path.to_s,
-                "string" => match,
+                "string" => binary_relocation_diagnostic_string(match, relative_path, offset),
                 "offset" => offset.to_i(16),
               }
               binary_relocation_diagnostics << diagnostic unless binary_relocation_diagnostics.include?(diagnostic)

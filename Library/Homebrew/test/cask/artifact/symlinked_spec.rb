@@ -26,16 +26,15 @@ RSpec.describe Cask::Artifact::Symlinked, :cask do
     end
 
     context "when target is already linked from a formula" do
-      it "detects the conflict and skips linking with warning" do
-        # Create a fake formula directory structure
-        formula_cellar_path = HOMEBREW_CELLAR/"with-binary/1.0.0/bin"
-        formula_cellar_path.mkpath
-        formula_binary_path = formula_cellar_path/"binary"
+      let(:formula_binary_path) { HOMEBREW_CELLAR/"with-binary/1.0.0/bin/binary" }
+
+      before do
+        formula_binary_path.dirname.mkpath
         FileUtils.touch formula_binary_path
-
-        # Create symlink from the expected location to the formula binary
         target_path.make_symlink(formula_binary_path)
+      end
 
+      it "detects the conflict and skips linking with warning" do
         stderr = <<~EOS
           Warning: It seems there is already a Binary at '#{target_path}' from formula with-binary; skipping link.
         EOS
@@ -47,6 +46,20 @@ RSpec.describe Cask::Artifact::Symlinked, :cask do
         expect(target_path).to be_a_symlink
         expect(target_path.readlink).to eq(formula_binary_path)
       end
+
+      it "overwrites the formula's symlink when overwriting" do
+        expect do
+          binary_artifact.install_phase(command: NeverSudoSystemCommand, force: false, overwrite: true)
+        end.to output(/; overwriting\.$/).to_stderr
+
+        expect(target_path.readlink).to eq(binary_artifact.source)
+      end
+
+      it "does not list the formula's symlink when unlinking in a dry run" do
+        expect do
+          binary_artifact.uninstall_phase(command: NeverSudoSystemCommand, dry_run: true)
+        end.not_to output.to_stdout
+      end
     end
 
     context "when target doesn't exist" do
@@ -57,6 +70,14 @@ RSpec.describe Cask::Artifact::Symlinked, :cask do
 
         expect(target_path).to be_a_symlink
         expect(target_path.readlink).to exist
+      end
+
+      it "only lists the target in a dry run" do
+        expect do
+          binary_artifact.install_phase(command: NeverSudoSystemCommand, force: false, dry_run: true)
+        end.to output("#{target_path}\n").to_stdout
+
+        expect(target_path).not_to be_a_symlink
       end
     end
   end

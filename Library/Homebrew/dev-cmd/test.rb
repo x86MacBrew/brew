@@ -82,22 +82,34 @@ module Homebrew
 
             exec_args << "--HEAD" if f.head?
 
-            Sandbox.run_or_fork(
-              *exec_args,
-              step:                 "testing #{f.full_name}",
-              warn_without_sandbox: false,
-            ) do |sandbox|
-              f.logs.mkpath
-              sandbox.record_log(f.logs/"test.sandbox.log")
-              sandbox.allow_write_temp_and_cache
-              sandbox.allow_write_log(f)
-              sandbox.allow_write_xcode
-              sandbox.allow_write_path(HOMEBREW_PREFIX/"var/homebrew/locks")
-              sandbox.deny_read_home
-              optional_prefix_var_dirs.each do |dir|
-                sandbox.allow_write_path_if_exists HOMEBREW_PREFIX/dir
+            Mktemp.new("#{f.name}-test", retain: args.keep_tmp?).run(chdir: false) do |staging|
+              testpath = staging.tmpdir
+              raise "Test path is unexpectedly unset." if testpath.nil?
+
+              ENV["HOMEBREW_TEST_PATH"] = testpath.to_s
+
+              Sandbox.run_or_fork(
+                *exec_args,
+                step:                 "testing #{f.full_name}",
+                warn_without_sandbox: false,
+              ) do |sandbox|
+                f.logs.mkpath
+                sandbox.record_log(f.logs/"test.sandbox.log")
+                sandbox.allow_write_temp_and_cache
+                sandbox.allow_write_log(f)
+                sandbox.allow_write_xcode
+                sandbox.allow_write_path(HOMEBREW_PREFIX/"var/homebrew/locks")
+                sandbox.deny_read_home
+                optional_prefix_var_dirs.each do |dir|
+                  sandbox.allow_write_path_if_exists HOMEBREW_PREFIX/dir
+                end
+                sandbox.deny_all_network unless f.class.network_access_allowed?(:test)
+                sandbox.allow_network path: testpath, type: :subpath
               end
-              sandbox.deny_all_network unless f.class.network_access_allowed?(:test)
+            # Preserve the parent's test directory for interactive debugging.
+            rescue Exception # rubocop:disable Lint/RescueException
+              staging.retain! if args.debug?
+              raise
             end
           # Rescue any possible exception types.
           rescue Exception => e # rubocop:disable Lint/RescueException

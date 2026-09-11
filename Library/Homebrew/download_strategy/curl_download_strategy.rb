@@ -249,30 +249,25 @@ class CurlDownloadStrategy < AbstractFileDownloadStrategy
       [*parse_content_disposition.call("Content-Disposition: #{header}")]
     end
 
-    time =  parsed_headers
-            .flat_map { |headers| [*headers["last-modified"]] }
-            .filter_map do |t|
-              t.match?(/^\d+$/) ? Time.at(t.to_i) : Time.parse(t)
-            rescue ArgumentError # When `Time.parse` gets a badly formatted date.
-              nil
-            end
+    final_headers = parsed_headers.last || {}
 
-    file_size = parsed_headers
-                .flat_map { |headers| [*headers["content-length"]&.to_i] }
-                .last
+    time = [*final_headers["last-modified"]].filter_map do |t|
+      t.match?(/^\d+$/) ? Time.at(t.to_i) : Time.parse(t)
+    rescue ArgumentError # When `Time.parse` gets a badly formatted date.
+      nil
+    end
+
+    file_size = [*final_headers["content-length"]].last&.to_i
 
     # Fallback to content-range header if content-length is not available.
     # Content-Range format: "bytes start-end/total" or "bytes */total" or "bytes start-end/*"
     if file_size.nil? || file_size.zero?
-      file_size = parsed_headers
-                  .flat_map { |headers| [*headers["content-range"]] }
+      file_size = [*final_headers["content-range"]]
                   .filter_map { |range| Integer(range.split("/").last, 10, exception: false) }
                   .last
     end
 
-    content_type = parsed_headers
-                   .flat_map { |headers| [*headers["content-type"]] }
-                   .last
+    content_type = [*final_headers["content-type"]].last
 
     is_redirection = url != final_url
     basename = filenames.last || parse_basename(final_url, search_query: !is_redirection)

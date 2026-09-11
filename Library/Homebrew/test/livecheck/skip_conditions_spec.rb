@@ -9,7 +9,7 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
 
   let(:formulae) do
     {
-      basic:               formula("test") do
+      basic:                   formula("test") do
         T.bind(self, T.class_of(Formula))
         desc "Test formula"
         homepage "https://brew.sh"
@@ -21,45 +21,75 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
           regex(/"stable":"(\d+(?:\.\d+)+)"/i)
         end
       end,
-      deprecated:          formula("test_deprecated") do
+      deprecated:              formula("test_deprecated") do
         T.bind(self, T.class_of(Formula))
         desc "Deprecated test formula"
         homepage "https://brew.sh"
         url "https://brew.sh/test-0.0.1.tgz"
         deprecate! date: "2020-06-25", because: :unmaintained
       end,
-      disabled:            formula("test_disabled") do
+      disabled:                formula("test_disabled") do
         T.bind(self, T.class_of(Formula))
         desc "Disabled test formula"
         homepage "https://brew.sh"
         url "https://brew.sh/test-0.0.1.tgz"
         disable! date: "2020-06-25", because: :unmaintained
       end,
-      head_only:           formula("test_head_only") do
+      partially_disabled_arch: lambda do
+        path = mktmpdir/"test_partially_disabled_arch.rb"
+        path.write <<~RUBY
+          class TestPartiallyDisabledArch < Formula
+            desc "Partially disabled (arch) test formula"
+            homepage "https://brew.sh"
+            url "https://brew.sh/test-0.0.1.tgz"
+            on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+              disable! date: "2020-06-25", because: :unmaintained
+            end
+          end
+        RUBY
+
+        Formulary.factory(path)
+      end.call,
+      partially_disabled_os:   lambda do
+        path = mktmpdir/"test_partially_disabled_os.rb"
+        path.write <<~RUBY
+          class TestPartiallyDisabledOs < Formula
+            desc "Partially disabled (OS) test formula"
+            homepage "https://brew.sh"
+            url "https://brew.sh/test-0.0.1.tgz"
+            on_#{OS.mac? ? "macos" : "linux"} do
+              disable! date: "2020-06-25", because: :unmaintained
+            end
+          end
+        RUBY
+
+        Formulary.factory(path)
+      end.call,
+      head_only:               formula("test_head_only") do
         T.bind(self, T.class_of(Formula))
         desc "HEAD-only test formula"
         homepage "https://brew.sh"
         head "https://github.com/Homebrew/brew.git", branch: "main"
       end,
-      gist:                formula("test_gist") do
+      gist:                    formula("test_gist") do
         T.bind(self, T.class_of(Formula))
         desc "Gist test formula"
         homepage "https://brew.sh"
         url "https://gist.github.com/Homebrew/0000000000"
       end,
-      google_code_archive: formula("test_google_code_archive") do
+      google_code_archive:     formula("test_google_code_archive") do
         T.bind(self, T.class_of(Formula))
         desc "Google Code Archive test formula"
         homepage "https://brew.sh"
         url "https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/brew/brew-1.0.0.tar.gz"
       end,
-      internet_archive:    formula("test_internet_archive") do
+      internet_archive:        formula("test_internet_archive") do
         T.bind(self, T.class_of(Formula))
         desc "Internet Archive test formula"
         homepage "https://brew.sh"
         url "https://web.archive.org/web/20200101000000/https://brew.sh/test-0.0.1.tgz"
       end,
-      skip:                formula("test_skip") do
+      skip:                    formula("test_skip") do
         T.bind(self, T.class_of(Formula))
         desc "Skipped test formula"
         homepage "https://brew.sh"
@@ -69,7 +99,7 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
           skip
         end
       end,
-      skip_with_message:   formula("test_skip_with_message") do
+      skip_with_message:       formula("test_skip_with_message") do
         T.bind(self, T.class_of(Formula))
         desc "Skipped test formula"
         homepage "https://brew.sh"
@@ -79,7 +109,7 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
           skip "Not maintained"
         end
       end,
-      versioned:           formula("test@0.0.1") do
+      versioned:               formula("test@0.0.1") do
         T.bind(self, T.class_of(Formula))
         desc "Versioned test formula"
         homepage "https://brew.sh"
@@ -124,6 +154,36 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
 
         disable! date: "2020-06-25", because: :discontinued
       end,
+      partially_disabled_arch:               Cask::CaskLoader.load(<<~RUBY),
+        cask "test_partially_disabled_arch" do
+          version "0.0.1"
+          sha256 :no_check
+
+          url "https://brew.sh/test-0.0.1.tgz"
+          name "Test Partially Disable Arch"
+          desc "Partially disabled (arch) test cask"
+          homepage "https://brew.sh"
+
+          on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+            disable! date: "2020-06-25", because: :unmaintained
+          end
+        end
+      RUBY
+      partially_disabled_os:                 Cask::CaskLoader.load(<<~RUBY),
+        cask "test_partially_disabled_os" do
+          version "0.0.1"
+          sha256 :no_check
+
+          url "https://brew.sh/test-0.0.1.tgz"
+          name "Test Partially Disable OS"
+          desc "Partially disabled (OS) test cask"
+          homepage "https://brew.sh"
+
+          on_#{OS.mac? ? "macos" : "linux"} do
+            disable! date: "2020-06-25", because: :unmaintained
+          end
+        end
+      RUBY
       future_disable_fails_gatekeeper_check: Cask::Cask.new("test_future_disable_fails_gatekeeper_check") do
         version "0.0.1"
 
@@ -352,21 +412,6 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
   end
 
   describe "::skip_information" do
-    it "does not skip a cask disabled only on the current OS" do
-      cask = Cask::CaskLoader.load(<<~RUBY)
-        cask "partially-disabled" do
-          version "1.2.3"
-          url "https://brew.sh/test-1.2.3.tgz"
-
-          on_#{OS.mac? ? "macos" : "linux"} do
-            disable! date: "2020-01-01", because: :unmaintained
-          end
-        end
-      RUBY
-
-      expect(skip_conditions.skip_information(cask)).to eq({})
-    end
-
     context "when a formula without a `livecheck` block is deprecated" do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:deprecated]))
@@ -378,6 +423,18 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
       it "skips" do
         expect(skip_conditions.skip_information(formulae[:disabled]))
           .to eq(status_hashes[:formula][:disabled])
+      end
+    end
+
+    context "when a formula is only disabled on the current arch" do
+      it "does not skip" do
+        expect(skip_conditions.skip_information(formulae[:partially_disabled_arch])).to eq({})
+      end
+    end
+
+    context "when a formula is only disabled on the current OS" do
+      it "does not skip" do
+        expect(skip_conditions.skip_information(formulae[:partially_disabled_os])).to eq({})
       end
     end
 
@@ -437,6 +494,18 @@ RSpec.describe Homebrew::Livecheck::SkipConditions do
       it "skips" do
         expect(skip_conditions.skip_information(casks[:disabled]))
           .to eq(status_hashes[:cask][:disabled])
+      end
+    end
+
+    context "when a cask is only disabled on the current arch" do
+      it "does not skip" do
+        expect(skip_conditions.skip_information(casks[:partially_disabled_arch])).to eq({})
+      end
+    end
+
+    context "when a cask is only disabled on the current OS" do
+      it "does not skip" do
+        expect(skip_conditions.skip_information(casks[:partially_disabled_os])).to eq({})
       end
     end
 

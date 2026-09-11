@@ -54,19 +54,48 @@ module RuboCop
 
         sig { params(stanzas: T::Array[RuboCop::Cask::AST::Stanza]).returns(T::Array[RuboCop::Cask::AST::Stanza]) }
         def sort_stanzas(stanzas)
-          stanzas.sort do |stanza1, stanza2|
-            i1 = stanza1.stanza_index
-            i2 = stanza2.stanza_index
-
-            if i1 == i2
-              i1 = stanzas.index(stanza1)
-              i2 = stanzas.index(stanza2)
-            end
-            raise "unexpected nil value for i1" unless i1
-            raise "unexpected nil value for i2" unless i2
-
-            i1 - i2
+          sort_depends_on_stanzas = stanzas.all? do |stanza|
+            stanza.stanza_name != :depends_on || !depends_on_sort_key(stanza).nil?
           end
+          stanzas.each_with_index.sort_by do |stanza, index|
+            [
+              stanza.stanza_index || raise("unexpected nil stanza index"),
+              if sort_depends_on_stanzas && stanza.stanza_name == :depends_on
+                depends_on_sort_key(stanza)
+              else
+                ""
+              end,
+              index,
+            ]
+          end.map(&:first)
+        end
+
+        sig { params(stanza: RuboCop::Cask::AST::Stanza).returns(T.nilable(String)) }
+        def depends_on_sort_key(stanza)
+          node = stanza.stanza_node
+          return unless node.is_a?(RuboCop::AST::SendNode)
+
+          argument = node.first_argument
+          return unless argument
+          return argument.value.to_s.downcase if argument.sym_type?
+          return unless argument.hash_type?
+
+          return unless argument.pairs.all? do |pair|
+            next false unless pair.key.sym_type?
+
+            values = pair.value.array_type? ? pair.value.values : [pair.value]
+            values.all? { |value| value.sym_type? || value.str_type? }
+          end
+
+          sort_key = []
+          argument.pairs.each do |pair|
+            sort_key << pair.key.value.to_s.downcase
+            values = pair.value.array_type? ? pair.value.values : [pair.value]
+            values.each do |value|
+              sort_key << value.value.to_s.downcase
+            end
+          end
+          sort_key.join("\0")
         end
       end
     end

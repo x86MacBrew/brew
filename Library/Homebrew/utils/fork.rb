@@ -60,9 +60,12 @@ module Utils
 
   sig { params(error: Exception).returns(T::Hash[String, T.untyped]) }
   def self.child_error_hash(error)
-    require "json/add/exception"
-
-    error_hash = T.cast(JSON.parse(error.to_json), T::Hash[String, T.untyped])
+    # `rewrite_child_error` and `Cask::Artifact` read these keys back.
+    error_hash = {
+      "json_class" => error.class.name,
+      "m"          => error.message,
+      "b"          => error.backtrace,
+    }
     case error
     when BuildError
       error_hash["cmd"] = error.cmd
@@ -85,7 +88,16 @@ module Utils
 
   sig { params(error_pipe: T.nilable(T.any(IO, ForkedChildChannel)), error: Exception).void }
   def self.report_forked_child_error(error_pipe, error)
-    error_pipe&.puts child_error_hash(error).to_json
+    require "json"
+
+    coder = JSON::Coder.new do |object|
+      case object
+      when Exception then child_error_hash(object)
+      else object
+      end
+    end
+
+    error_pipe&.puts coder.dump(error)
     error_pipe&.close
   end
 

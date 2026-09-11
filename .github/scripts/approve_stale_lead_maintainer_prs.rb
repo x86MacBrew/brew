@@ -2,15 +2,19 @@
 # frozen_string_literal: true
 
 require "date"
+require "json"
+require "open3"
+require "sorbet-runtime"
 require "time"
 require "uri"
-require "utils/formatter"
-require "utils/github"
-require "utils/output"
 
 # Approves stale lead maintainer PRs from GitHub Actions.
 class StaleLeadMaintainerPrApproval
-  include Utils::Output::Mixin
+  # Standalone Ruby does not include T::Sig in Module.
+  extend T::Sig # rubocop:disable Sorbet/RedundantExtendTSig
+
+  API_URL = "https://api.github.com"
+  MAX_PER_PAGE = 100
 
   REPOSITORY = "Homebrew/brew"
   GITHUB_ACTIONS_URL = "https://github.com/apps/github-actions"
@@ -81,7 +85,7 @@ class StaleLeadMaintainerPrApproval
     lead_maintainers_line = File.read("README.md").each_line.find do |line|
       line.start_with?("Homebrew's [Lead Maintainers]")
     end
-    raise "Could not find lead maintainers in README.md." if lead_maintainers_line.blank?
+    raise "Could not find lead maintainers in README.md." if lead_maintainers_line.nil?
 
     lead_maintainers = T.let({}, T::Hash[String, T::Boolean])
     lead_maintainers_line.scan(%r{https://github\.com/([A-Za-z0-9-]+)}) do |login|
@@ -116,9 +120,9 @@ class StaleLeadMaintainerPrApproval
     end
 
     pull_requests = if @pull_request_number.empty?
-      paginated_rest("#{GitHub::API_URL}/repos/#{@repository}/pulls", "state=open&per_page=#{GitHub::MAX_PER_PAGE}")
+      paginated_rest("#{API_URL}/repos/#{@repository}/pulls", "state=open")
     else
-      [T.cast(rest("#{GitHub::API_URL}/repos/#{@repository}/pulls/#{Integer(@pull_request_number)}"), GitHubPayload)]
+      [T.cast(rest("#{API_URL}/repos/#{@repository}/pulls/#{Integer(@pull_request_number)}"), GitHubPayload)]
     end
     puts "Evaluating #{pull_requests.length} pull request(s)."
     facts = pull_requests.map { |pull_request| evaluate(pull_request, exhaustive: false) }
@@ -136,7 +140,7 @@ class StaleLeadMaintainerPrApproval
     approval_facts.each do |data|
       puts "Approving pull request ##{data.number}."
       rest(
-        "#{GitHub::API_URL}/repos/#{@repository}/pulls/#{data.number}/reviews",
+        "#{API_URL}/repos/#{@repository}/pulls/#{data.number}/reviews",
         data:           {
           event: "APPROVE",
           body:  <<~MARKDOWN,
@@ -164,7 +168,7 @@ class StaleLeadMaintainerPrApproval
   def report
     branch = ENV.fetch("GITHUB_REF_NAME", REPORT_BRANCH)
     query = URI.encode_www_form(state: "open", head: "Homebrew:#{branch}", per_page: 1)
-    pull_requests = T.cast(rest("#{GitHub::API_URL}/repos/#{@repository}/pulls?#{query}"), GitHubPayloads)
+    pull_requests = T.cast(rest("#{API_URL}/repos/#{@repository}/pulls?#{query}"), GitHubPayloads)
     raise "No open pull request found for branch #{branch}." if pull_requests.empty?
 
     data = evaluate(pull_requests.fetch(0), exhaustive: true)
@@ -262,8 +266,7 @@ class StaleLeadMaintainerPrApproval
         issues = T.cast(
           T.cast(
             rest(
-              "#{GitHub::API_URL}/search/issues?#{URI.encode_www_form(q: query, per_page: GitHub::MAX_PER_PAGE,
-                                                                      page:)}",
+              "#{API_URL}/search/issues?#{URI.encode_www_form(q: query, per_page: MAX_PER_PAGE, page:)}",
             ),
             GitHubPayload,
           ).fetch("items"),
@@ -271,7 +274,7 @@ class StaleLeadMaintainerPrApproval
         )
         @recent_approval_search_pages[data.author] = page
         @recent_approval_issues.fetch(data.author).concat(issues)
-        @recent_approval_search_complete[data.author] = true if issues.length < GitHub::MAX_PER_PAGE
+        @recent_approval_search_complete[data.author] = true if issues.length < MAX_PER_PAGE
       end
     end
     data.approved_another_pr_checked = true
@@ -319,12 +322,15 @@ class StaleLeadMaintainerPrApproval
       return finish(data, failures_for(data, include_ci: false))
     end
 
-    changed_files = paginated_rest("#{GitHub::API_URL}/repos/#{@repository}/pulls/#{data.number}/files")
+    changed_files = paginated_rest("#{API_URL}/repos/#{@repository}/pulls/#{data.number}/files")
     data.sensitive_files_checked = true
     data.changed_sensitive_files = changed_files.filter_map do |file|
       filename = T.cast(file.fetch("filename"), String)
+      # Homebrew's core extensions are not available in this standalone script.
+      # rubocop:disable Homebrew/NegateInclude
       next if SENSITIVE_PATH_PREFIXES.none? { |prefix| filename.start_with?(prefix) } &&
-              SENSITIVE_PATHS.exclude?(filename)
+              !SENSITIVE_PATHS.include?(filename)
+      # rubocop:enable Homebrew/NegateInclude
 
       filename
     end
@@ -334,11 +340,11 @@ class StaleLeadMaintainerPrApproval
                     failures_for(data, include_ci: false))
     end
 
-    check_runs = paginated_rest("#{GitHub::API_URL}/repos/#{@repository}/commits/#{data.head_sha}/check-runs")
+    check_runs = paginated_rest("#{API_URL}/repos/#{@repository}/commits/#{data.head_sha}/check-runs")
                  .flat_map do |page|
                    T.cast(page.fetch("check_runs"), GitHubPayloads)
                  end
-    commit_status = T.cast(rest("#{GitHub::API_URL}/repos/#{@repository}/commits/#{data.head_sha}/status"),
+    commit_status = T.cast(rest("#{API_URL}/repos/#{@repository}/commits/#{data.head_sha}/status"),
                            GitHubPayload)
     data.ci_checked = true
     data.failing_ci_jobs = check_runs.filter_map do |check_run|
@@ -382,15 +388,15 @@ class StaleLeadMaintainerPrApproval
     puts if @printed_pull_request_summary
     @printed_pull_request_summary = true
     result = if @event_name == "push"
-      data.should_approve ? Formatter.success("would approve") : Formatter.error("would not approve")
+      data.should_approve ? "would approve" : "would not approve"
     elsif data.should_approve
-      Formatter.success("will approve")
+      "will approve"
     else
-      Formatter.error("will not approve")
+      "will not approve"
     end
-    oh1 "Pull request ##{data.number}: #{data.title}"
+    puts "==> Pull request ##{data.number}: #{data.title}"
     puts "- Result: #{result}"
-    puts "- Author: #{Formatter.identifier("@#{data.author}")}"
+    puts "- Author: @#{data.author}"
     puts "- Not from a fork: #{status_label(data.not_from_fork)}"
     puts "- Not a draft: #{status_label(!data.draft)}"
     puts "- Weekday approval window: #{status_label(data.weekday_approval_window)}"
@@ -405,30 +411,30 @@ class StaleLeadMaintainerPrApproval
     if data.reviews_checked
       puts "- Human reviews since creation:"
       if data.human_reviews_since_creation.empty?
-        puts "  - #{Formatter.success("none")}"
+        puts "  - none"
       else
-        data.human_reviews_since_creation.each { |review| puts "  - #{Formatter.warning(review)}" }
+        data.human_reviews_since_creation.each { |review| puts "  - #{review}" }
       end
     else
-      puts "- Human reviews since creation: #{Formatter.warning("not checked")}"
+      puts "- Human reviews since creation: not checked"
     end
     puts "- Copilot reviewed: #{status_label(data.reviews_checked ? data.copilot_reviewed : nil)}"
     sensitive_files_unchanged = data.sensitive_files_checked ? data.sensitive_files_unchanged : nil
     puts "- .github/ and sensitive files unchanged: #{status_label(sensitive_files_unchanged)}"
     if data.sensitive_files_checked && !data.changed_sensitive_files.empty?
       puts "- Changed .github/ or sensitive files:"
-      data.changed_sensitive_files.each { |file| puts "  - #{Formatter.error(file)}" }
+      data.changed_sensitive_files.each { |file| puts "  - #{file}" }
     end
     puts "- CI passing: #{status_label(data.ci_checked ? data.ci_passing : nil)}"
     if data.ci_checked
       puts "- Failing CI jobs:"
       if data.failing_ci_jobs.empty?
-        puts "  - #{Formatter.success("none")}"
+        puts "  - none"
       else
-        data.failing_ci_jobs.each { |job| puts "  - #{Formatter.error(job)}" }
+        data.failing_ci_jobs.each { |job| puts "  - #{job}" }
       end
     else
-      puts "- Failing CI jobs: #{Formatter.warning("not checked")}"
+      puts "- Failing CI jobs: not checked"
     end
     already_approved = data.reviews_checked ? data.already_approved : nil
     puts "- Already approved by github-actions[bot] for this commit: #{status_label(already_approved)}"
@@ -438,9 +444,9 @@ class StaleLeadMaintainerPrApproval
 
   sig { params(value: T.nilable(T::Boolean)).returns(String) }
   def status_label(value)
-    return Formatter.warning("not checked") if value.nil?
+    return "not checked" if value.nil?
 
-    value ? Formatter.success("true") : Formatter.error("false")
+    value.to_s
   end
 
   sig { params(data: PullRequestFacts, include_ci: T::Boolean).returns(T::Array[String]) }
@@ -476,7 +482,7 @@ class StaleLeadMaintainerPrApproval
   sig { params(facts: T::Array[PullRequestFacts]).void }
   def summarise(facts)
     summary_path = ENV.fetch("GITHUB_STEP_SUMMARY", nil)
-    return if summary_path.blank?
+    return if summary_path.nil? || summary_path.match?(/\A[[:space:]]*\z/)
 
     File.open(summary_path, "a") do |summary|
       summary.puts "## Stale lead maintainer PR approval"
@@ -524,21 +530,18 @@ class StaleLeadMaintainerPrApproval
 
   sig { params(number: Integer).returns(GitHubPayloads) }
   def reviews_for(number)
-    @reviews[number] ||= paginated_rest("#{GitHub::API_URL}/repos/#{@repository}/pulls/#{number}/reviews")
+    @reviews[number] ||= paginated_rest("#{API_URL}/repos/#{@repository}/pulls/#{number}/reviews")
   end
 
   sig { params(url: T.any(String, URI::Generic), additional_query_params: String).returns(GitHubPayloads) }
   def paginated_rest(url, additional_query_params = "")
-    results = T.let([], GitHubPayloads)
-    GitHub::API.paginate_rest(url, additional_query_params:) do |result|
-      page = T.cast(result, GitHubPage)
-      if page.is_a?(Array)
-        results.concat(page)
-      else
-        results << page
-      end
+    pages = T.cast(
+      JSON.parse(gh_api("#{url}?per_page=#{MAX_PER_PAGE}&#{additional_query_params}", "--paginate", "--slurp")),
+      T::Array[GitHubPage],
+    )
+    pages.flat_map do |page|
+      page.is_a?(Array) ? page : [page]
     end
-    results
   end
 
   sig {
@@ -549,8 +552,21 @@ class StaleLeadMaintainerPrApproval
     ).returns(GitHubResult)
   }
   def rest(url, data: {}, request_method: :GET)
-    GitHub::API.open_rest(url, data:, request_method:)
+    T.cast(JSON.parse(gh_api(url.to_s, "--method", request_method.to_s, data:)), GitHubResult)
+  end
+
+  sig { params(args: String, data: RequestData).returns(String) }
+  def gh_api(*args, data: {})
+    args += ["--input", "-"] unless data.empty?
+    stdout, stderr, status = Open3.capture3("gh", "api", *args, stdin_data: JSON.generate(data))
+    # `Open3` tags output with the default external encoding, which is US-ASCII when
+    # the runner has no UTF-8 locale. `gh` always emits UTF-8.
+    stdout.force_encoding(Encoding::UTF_8)
+    stderr.force_encoding(Encoding::UTF_8)
+    raise "GitHub API request failed: #{stderr.strip}" unless status.success?
+
+    stdout
   end
 end
 
-StaleLeadMaintainerPrApproval.new.run
+StaleLeadMaintainerPrApproval.new.run if $PROGRAM_NAME == __FILE__

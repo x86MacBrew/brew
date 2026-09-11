@@ -36,7 +36,7 @@ jobs:
       TEMPORARY_CERTIFICATE_FILE: "homebrew_developer_id_installer_certificate.p12"
       TEMPORARY_KEYCHAIN_FILE: "homebrew_installer_signing.keychain-db"
       # Set to the oldest supported version of macOS
-      HOMEBREW_MACOS_OLDEST_SUPPORTED: "14.0"
+      HOMEBREW_MACOS_OLDEST_SUPPORTED: "15.0"
     permissions:
       contents: write # for creating tags and releases
       attestations: write # for actions/attest
@@ -77,7 +77,7 @@ jobs:
 
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@3cdb78d0f62ad29dd32de765782654f4eedea607 # 2026.08.31.1
+        uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f # 2026.09.07.1
         with:
           core: false
           cask: false

@@ -136,17 +136,7 @@ The following timeline outlines expected Tier classifications based on Apple’s
 - As of September 2026:
 
   Apple Silicon:
-  - Tier 1: macOS Tahoe 26, Sequoia 15, Sonoma 14
-  - Tier 3: macOS Big Sur 11 through Ventura 13
-
-  Intel x86_64:
-  - Tier 3: macOS Catalina 10.15 through Tahoe 26
-  - Unsupported: macOS Mojave 10.14 and earlier
-
-- Expected in or after September 2026:
-
-  Apple Silicon:
-  - Tier 1: macOS 27, Tahoe 26, Sequoia 15
+  - Tier 1: macOS Golden Gate 27, Tahoe 26, Sequoia 15
   - Tier 3: macOS Big Sur 11 through Sonoma 14
 
   Intel x86_64:
@@ -156,7 +146,7 @@ The following timeline outlines expected Tier classifications based on Apple’s
 - Expected in or after September 2027:
 
   Apple Silicon:
-  - Tier 1: macOS 28, 27, Tahoe 26
+  - Tier 1: macOS 28, Golden Gate 27, Tahoe 26
   - Tier 3: macOS Monterey 12 through Sequoia 15
   - Unsupported: macOS Big Sur 11
 

@@ -8,6 +8,7 @@ RSpec.describe MacOSRequirement do
 
   let(:macos_oldest_allowed) { MacOSVersion.new(HOMEBREW_MACOS_OLDEST_ALLOWED) }
   let(:macos_newest_allowed) { MacOSVersion.new(HOMEBREW_MACOS_NEWEST_UNSUPPORTED) }
+  let(:macos_newest_supported) { MacOSVersion.new(HOMEBREW_MACOS_NEWEST_SUPPORTED) }
   let(:tahoe_major) { MacOSVersion.new("26.0") }
 
   it "disables Catalina requirements" do
@@ -47,9 +48,9 @@ RSpec.describe MacOSRequirement do
     context "when running on Linux", :needs_linux do
       it "returns false" do
         expect(requirement.satisfied?).to be false
-        requirement = described_class.new([macos_newest_allowed.to_sym])
+        requirement = described_class.new([macos_newest_supported.to_sym])
         expect(requirement.satisfied?).to be false
-        requirement = described_class.new([macos_newest_allowed.to_sym], comparator: "<=")
+        requirement = described_class.new([macos_newest_supported.to_sym], comparator: "<=")
         expect(requirement.satisfied?).to be false
       end
     end

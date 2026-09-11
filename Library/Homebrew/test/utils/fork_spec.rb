@@ -15,6 +15,17 @@ RSpec.describe Utils do
         "cmd" => "make", "args" => ["install"], "env" => { "PATH" => "/bin" },
       )
     end
+
+    it "serialises the class, message and backtrace that the parent reads back" do
+      error = RuntimeError.new("child failed")
+      error.set_backtrace ["/some/file.rb:1:in 'block'"]
+
+      expect(described_class.child_error_hash(error)).to eq(
+        "json_class" => "RuntimeError",
+        "m"          => "child failed",
+        "b"          => ["/some/file.rb:1:in 'block'"],
+      )
+    end
   end
 
   describe "#safe_fork" do

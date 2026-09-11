@@ -19,7 +19,8 @@ module OS
       def self.latest_version(macos: MacOS.version)
         macos = macos.strip_patch
         case macos
-        when "26", "15" then "26.3"
+        when "27", "26" then "27.0"
+        when "15" then "26.3"
         when "14" then "16.2"
         when "13" then "15.2"
         when "12" then "14.2"
@@ -229,7 +230,8 @@ module OS
         when "14.0.3" then "14.3.1"
         when "15.0.0" then "15.4"
         when "16.0.0" then "16.2"
-        else               "26.3"
+        when "17.0.0" then "26.3"
+        else               "27.0"
         end
       end
 
@@ -323,8 +325,8 @@ module OS
       sig { returns(String) }
       def self.latest_clang_version
         case MacOS.version
-        when "27" then "2100.3.20.102"
-        when "26", "15" then "1700.6.4.2"
+        when "27", "26" then "2100.3.34.2"
+        when "15" then "1700.6.4.2"
         when "14" then "1600.0.26.6"
         when "13" then "1500.1.0.2.5"
         when "12" then "1400.0.29.202"

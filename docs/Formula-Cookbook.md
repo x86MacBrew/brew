@@ -310,6 +310,9 @@ Add a valid test to the [`test do`](/rubydoc/Formula.html#test-class_method) blo
 
 The [`test do`](/rubydoc/Formula.html#test-class_method) block automatically creates and changes to a temporary directory which is deleted after run. You can access this [`Pathname`](/rubydoc/Pathname.html) with the [`testpath`](/rubydoc/Formula.html#testpath-instance_method) function. The environment variable `HOME` is set to [`testpath`](/rubydoc/Formula.html#testpath-instance_method) within the [`test do`](/rubydoc/Formula.html#test-class_method) block.
 
+On macOS, the test sandbox allows Unix socket connections within `testpath`, including its subdirectories, even when the formula disables network access for tests.
+Create sockets for test services in this directory; connections to sockets elsewhere are denied except for Homebrew's internal communication and, when network access is allowed, macOS DNS resolution.
+
 We want tests that don't require any user input and test the basic functionality of the application. For example `foo build-foo input.foo` is a good test and (despite their widespread use) `foo --version` and `foo --help` are bad tests. However, a bad test is better than no test at all.
 
 See the [`cmake`](https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/c/cmake.rb) formula for an example of a good test. It writes a basic `CMakeLists.txt` file into the test directory then calls CMake to generate Makefiles. This test checks that CMake doesn't e.g. segfault during basic operation.
@@ -980,7 +983,7 @@ Note that in the context of Homebrew, [`libexec`](/rubydoc/Formula.html#libexec-
 
 ### File-level operations
 
-You can use the file utilities provided by Ruby's [`FileUtils`](https://ruby-doc.org/current/stdlibs/fileutils/FileUtils.html). These are included in the [`Formula` class](/rubydoc/Formula.html), so you do not need the `FileUtils.` prefix to use them.
+You can use the file utilities provided by Ruby's [`FileUtils`](https://ruby-doc.org/core/FileUtils.html). These are included in the [`Formula` class](/rubydoc/Formula.html), so you do not need the `FileUtils.` prefix to use them.
 
 When creating symlinks, take special care to ensure they are *relative* symlinks. This makes it easier to create a relocatable bottle. For example, to create a symlink in `bin` to an executable in `libexec`, use:
 

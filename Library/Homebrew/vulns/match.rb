@@ -568,8 +568,8 @@ module Homebrew
       #
       # `first_fixed` is the {PkgVersion} at which Homebrew first shipped a fix
       # (from {#first_fixed_version} or a hand-set value), and
-      # `first_reintroduced` is the first Homebrew version in a newer affected
-      # interval (from {#first_reintroduced_version}). Otherwise
+      # `first_introduced` is the first affected Homebrew version (from
+      # {#first_introduced_version} or {#first_reintroduced_version}). Otherwise
       # {#range_status} is consulted: `affected? == false` sets
       # `fixed: pkg_version` and `ecosystem_specific.fix: "bump"`;
       # `affected? == true` (or no comparable range) emits no `fixed` event and
@@ -578,17 +578,17 @@ module Homebrew
       # sticks.
       sig {
         params(formula: Formula, hit: Hit, first_fixed: T.nilable(String),
-               first_reintroduced: T.nilable(String), now: Time)
+               first_introduced: T.nilable(String), now: Time)
           .returns(T::Hash[Symbol, T.untyped])
       }
-      def to_brew_record(formula, hit, first_fixed: nil, first_reintroduced: nil, now: Time.now.utc)
+      def to_brew_record(formula, hit, first_fixed: nil, first_introduced: nil, now: Time.now.utc)
         vuln = hit.vulnerability
         timestamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         status, status_evidence = range_status(hit, formula_name: formula.name)
 
         fixed = first_fixed
         fixed ||= formula.pkg_version.to_s if status&.fixed?
-        events = T.let([{ introduced: first_reintroduced || "0" }], T::Array[T::Hash[Symbol, String]])
+        events = T.let([{ introduced: first_introduced || "0" }], T::Array[T::Hash[Symbol, String]])
         events << { fixed: } if fixed
 
         record = T.let({
@@ -602,7 +602,7 @@ module Homebrew
             source:            "matched",
             strategy:          hit.strategy.to_s,
             confidence:        confidence_for(hit, status),
-            upstream_evidence: hit.evidence.map { |e| e.to_h.except(:advisory, :source_record).compact },
+            upstream_evidence: hit.evidence.map { |e| e.to_h.except(:advisory, :source_record).compact }.uniq,
           },
         }, T::Hash[Symbol, T.untyped])
 
@@ -702,6 +702,42 @@ module Homebrew
           end
         end
         result || :never_affected
+      end
+
+      # Return the earliest affected `pkg_version` for a new record. Check all
+      # history: one interval must cover every affected build and no known
+      # non-affected build, including resource changes without a revision bump.
+      # Unreadable history and unrepresentable intervals require manual review.
+      sig { params(formula: Formula, hit: Hit, first_fixed: T.nilable(String)).returns(T.any(String, Symbol)) }
+      def first_introduced_version(formula, hit, first_fixed: nil)
+        current_state = aggregate_state_at(formula, hit)
+        return :history_unavailable unless [:affected, :fixed].include?(current_state)
+
+        affected_versions = T.let([], T::Array[PkgVersion])
+        unaffected_versions = T.let([], T::Array[PkgVersion])
+        ((current_state == :affected) ? affected_versions : unaffected_versions) << formula.pkg_version
+        result = @history.walk(formula) do |old|
+          case aggregate_state_at(old, hit)
+          when :affected then affected_versions << old.pkg_version
+          when :fixed, :not_applicable then unaffected_versions << old.pkg_version
+          else next :history_unavailable
+          end
+          nil
+        end
+        return :history_unavailable unless result.nil?
+
+        introduced = affected_versions.min
+        return :history_unavailable unless introduced
+
+        fixed = PkgVersion.parse(first_fixed) if first_fixed
+        return :history_unavailable if fixed && affected_versions.any? { |version| version >= fixed }
+        if unaffected_versions.any? { |version| version >= introduced && (!fixed || version < fixed) }
+          return :history_unavailable
+        end
+
+        introduced.to_s
+      rescue ArgumentError
+        :history_unavailable
       end
 
       # Return the lowest representable formula `pkg_version` in the newest

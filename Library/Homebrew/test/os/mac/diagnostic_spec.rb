@@ -175,8 +175,8 @@ RSpec.describe Homebrew::Diagnostic::Checks do
     end
 
     it "triggers when built_on version differs from current macOS version" do
-      allow(MacOS).to receive(:version).and_return(MacOSVersion.new("14"))
-      allow(tab).to receive(:built_on).and_return({ "os_version" => "13" })
+      allow(MacOS).to receive(:version).and_return(MacOSVersion.new("15"))
+      allow(tab).to receive(:built_on).and_return({ "os_version" => "14" })
 
       expect(checks.check_pkgconf_macos_sdk_mismatch&.to_s).to include("brew reinstall pkgconf")
     end

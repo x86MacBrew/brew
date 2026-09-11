@@ -55,6 +55,25 @@ RSpec.describe Homebrew::Vulns::OsvExport do
   end
 
   describe ".merge_existing" do
+    it "repairs an unreviewed range with a nonzero initial introduction" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "BREW-x-CVE-1.json")
+        File.write(path, JSON.generate({
+          "id"       => "BREW-x-CVE-1",
+          "affected" => [{ "ranges" => [{ "type" => "ECOSYSTEM", "events" => [] }] }],
+        }))
+        incoming = {
+          id:       "BREW-x-CVE-1",
+          affected: [{ ranges: [{ type: "ECOSYSTEM", events: [{ introduced: "1.0" }, { fixed: "2.0" }] }] }],
+        }
+
+        merged = described_class.merge_existing(path, incoming, close_open_ranges: true, initial_introduction: true)
+
+        expect(JSON.parse(JSON.generate(merged))&.dig("affected", 0, "ranges", 0, "events"))
+          .to eq([{ "introduced" => "1.0" }, { "fixed" => "2.0" }])
+      end
+    end
+
     it "repairs invalid ranges individually without discarding valid reviewed ranges" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "BREW-x-CVE-1.json")
@@ -81,6 +100,60 @@ RSpec.describe Homebrew::Vulns::OsvExport do
           { "type" => "ECOSYSTEM", "events" => [{ "introduced" => "1.0" }, { "fixed" => "2.0" }] },
           { "type" => "ECOSYSTEM", "events" => [{ "introduced" => "0" }, { "fixed" => "2.0" }] },
         ]
+      end
+    end
+
+    [false, true].each do |terminal|
+      [false, true].each do |fixed|
+        it "repairs mixed ranges without reopening reviewed history (terminal: #{terminal}, fixed: #{fixed})" do
+          Dir.mktmpdir do |dir|
+            path = File.join(dir, "BREW-x-CVE-1.json")
+            reviewed = [{ "introduced" => "1.0" }]
+            reviewed << { "fixed" => "1.8" } if terminal
+            File.write(path, JSON.generate({
+              "id"       => "BREW-x-CVE-1",
+              "affected" => [{ "ranges" => [
+                { "type" => "ECOSYSTEM", "events" => reviewed },
+                { "type" => "ECOSYSTEM", "events" => [] },
+              ] }],
+            }))
+            events = [{ introduced: "1.5" }]
+            events << { fixed: "2.0" } if fixed
+            incoming = {
+              id:       "BREW-x-CVE-1",
+              affected: [{ ranges: [{ type: "ECOSYSTEM", events: }] }],
+            }
+
+            merged = described_class.merge_existing(path, incoming, close_open_ranges:    true,
+                                                                    initial_introduction: true)
+            reviewed << { "fixed" => "2.0" } if fixed && !terminal
+
+            expect(JSON.parse(JSON.generate(merged))&.dig("affected", 0, "ranges")).to eq [
+              { "type" => "ECOSYSTEM", "events" => reviewed },
+              { "type" => "ECOSYSTEM", "events" => JSON.parse(JSON.generate(events)) },
+            ]
+          end
+        end
+      end
+    end
+
+    it "rejects an initial repair whose fixed boundary does not follow a reviewed open range" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "BREW-x-CVE-1.json")
+        File.write(path, JSON.generate({
+          "id"       => "BREW-x-CVE-1",
+          "affected" => [{ "ranges" => [
+            { "type" => "ECOSYSTEM", "events" => [{ "introduced" => "2.0" }] },
+            { "type" => "ECOSYSTEM", "events" => [] },
+          ] }],
+        }))
+        incoming = {
+          id:       "BREW-x-CVE-1",
+          affected: [{ ranges: [{ type: "ECOSYSTEM", events: [{ introduced: "1.5" }, { fixed: "2.0" }] }] }],
+        }
+
+        expect(described_class.merge_existing(path, incoming, close_open_ranges: true, initial_introduction: true))
+          .to be_nil
       end
     end
 

@@ -99,7 +99,7 @@ RSpec.describe Cask::Artifact::Binary, :cask do
 
   it "raises a clean error when the target symlink cannot be resolved" do
     artifact = artifacts.first
-    expected_path.make_symlink(artifact.source)
+    expected_path.make_symlink(binarydir)
     allow(artifact.target).to receive(:realpath).and_raise(Errno::EACCES)
 
     expect do

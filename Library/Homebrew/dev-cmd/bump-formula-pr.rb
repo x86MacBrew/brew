@@ -575,6 +575,7 @@ module Homebrew
           end
 
           is_downgraded = Version.new(current_version) > Version.new(latest_version)
+          is_downgraded &&= current_version != resource.specs[:revision]
 
           begin
             result = update_resource_block!(formula, resource, latest_version)
@@ -750,31 +751,43 @@ module Homebrew
         ).returns(Symbol)
       }
       def update_resource_block!(formula, resource, new_version)
-        ohai "Updating resource \"#{resource.name}\" from #{resource.version} to #{new_version}"
+        old_version = resource.version.to_s
+        ohai "Updating resource \"#{resource.name}\" from #{old_version} to #{new_version}"
 
         old_url = resource.url
         raise ArgumentError, "resource \"#{resource.name}\" has no URL" if old_url.nil?
 
-        if (old_tag = resource.specs[:tag].presence) && resource.download_strategy <= GitDownloadStrategy
-          tag = update_url(old_tag, resource.version.to_s, new_version)
-          if tag == old_tag
-            opoo <<~EOS
-              You need to bump resource "#{resource.name}" manually since the new tag
-              and old tag are both:
-                #{tag}
-            EOS
-            return :tag_unchanged
-          end
+        if resource.download_strategy <= GitDownloadStrategy
+          old_tag = resource.specs[:tag].presence
+          old_revision = resource.specs[:revision].presence
 
           # `specs` omits `using:`, so pass it through to keep an explicit strategy
-          git_specs = { tag: }
+          git_specs = {}
           if (using = resource.using.presence)
             git_specs[:using] = using
           end
+
+          if old_tag
+            git_specs[:tag] = tag = update_url(old_tag, old_version, new_version)
+            if tag == old_tag
+              opoo <<~EOS
+                You need to bump resource "#{resource.name}" manually since the new tag
+                and old tag are both:
+                  #{tag}
+              EOS
+              return :tag_unchanged
+            end
+          elsif old_revision == old_version
+            git_specs[:revision] = new_revision = new_version
+          else
+            opoo "Could not resolve a revision for resource \"#{resource.name}\" version #{new_version}."
+            return :revision_unresolved
+          end
+
           resource_path, forced_version = fetch_resource_and_forced_version(resource, new_version, old_url,
                                                                             **git_specs)
-          new_revision = Utils.popen_read("git", "-C", resource_path.to_s, "rev-parse", "-q", "--verify",
-                                          "HEAD").strip
+          new_revision ||= Utils.popen_read("git", "-C", resource_path.to_s, "rev-parse", "-q", "--verify",
+                                            "HEAD").strip
           if new_revision.blank?
             opoo "Could not resolve a revision for resource \"#{resource.name}\" tag #{tag}."
             return :revision_unresolved
@@ -782,8 +795,8 @@ module Homebrew
 
           resource_name = resource.name.to_s
           formula_ast = Utils::AST::FormulaAST.new(formula.path.read)
-          formula_ast.replace_resource_stanza_hash_value(resource_name, :url, :tag, tag)
-          if resource.specs[:revision].present?
+          formula_ast.replace_resource_stanza_hash_value(resource_name, :url, :tag, tag) if tag
+          if old_revision.present?
             formula_ast.replace_resource_stanza_hash_value(resource_name, :url, :revision, new_revision)
           end
 

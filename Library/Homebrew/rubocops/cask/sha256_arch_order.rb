@@ -22,7 +22,7 @@ module RuboCop
         extend AutoCorrector
         include CaskHelp
 
-        ARCH_ORDER = [:arm, :intel, :x86_64, :arm64_linux, :x86_64_linux].freeze
+        ARCH_ORDER = RuboCop::Cask::Constants::SHA256_ARCH_ORDER
 
         MESSAGE = "`sha256` architecture keys should be ordered: arm, intel (or x86_64), arm64_linux, x86_64_linux"
 

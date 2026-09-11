@@ -35,6 +35,41 @@ RSpec.describe Homebrew::DevCmd::Bottle do
 
   it_behaves_like "parseable arguments"
 
+  describe "#binary_relocation_diagnostic_string" do
+    let(:bottle) { described_class.new(["--no-rebuild", "testball"]) }
+    let(:relative_path) { Pathname("bin/dbus-daemon") }
+
+    it "returns the match unchanged when it is valid UTF-8" do
+      # Matches are always tagged `ASCII-8BIT`, as `Utils.popen_read` reads in binary mode.
+      match = "/opt/homebrew/Cellar".b
+
+      result = bottle.binary_relocation_diagnostic_string(match, relative_path, "1000")
+
+      expect(result).to eq("/opt/homebrew/Cellar").and have_attributes(encoding: Encoding::UTF_8)
+    end
+
+    it "warns when scrubbing a match that is not valid UTF-8" do
+      # Mimics `strings -` gluing invalid UTF-8 bytes onto an adjacent real string.
+      match = "\xFF\xFF\xFF\xFF/opt/homebrew/Cellar".b
+
+      expect(bottle).to receive(:opoo)
+        .with("Scrubbing string with invalid encoding in #{relative_path} at offset 0x203cc")
+
+      bottle.binary_relocation_diagnostic_string(match, relative_path, "203cc")
+    end
+
+    it "scrubs a match that is not valid UTF-8, keeping the rest of the string" do
+      # Mimics `strings -` gluing invalid UTF-8 bytes onto an adjacent real string.
+      match = "\xFF\xFF\xFF\xFF/opt/homebrew/Cellar".b
+      allow(bottle).to receive(:opoo)
+
+      result = bottle.binary_relocation_diagnostic_string(match, relative_path, "203cc")
+
+      expect(result).to have_attributes(encoding: Encoding::UTF_8, valid_encoding?: true)
+        .and end_with("/opt/homebrew/Cellar")
+    end
+  end
+
   it "does not restore locations when placeholdering fails" do
     formula = formula("testball") do
       T.bind(self, T.class_of(Formula))

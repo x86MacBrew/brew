@@ -88,6 +88,62 @@ RSpec.describe Homebrew::DevCmd::BumpCaskPr do
     expect(Cask::CaskLoader.load("local-caffeine").version.to_s).to eq("1.2.4")
   end
 
+  describe "#run" do
+    it "updates a cask disabled only on the current arch" do
+      cask_path = CoreCaskTap.instance.new_cask_path("test")
+      cask_path.dirname.mkpath
+      cask_path.write <<~RUBY
+        cask "test" do
+          version "1.2.3"
+          sha256 :no_check
+
+          on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+            disable! date: "2020-01-01", because: :unmaintained
+          end
+        end
+      RUBY
+      cask = Cask::CaskLoader.load(cask_path)
+      command = described_class.new([
+        "--write-only", "--no-audit", "--no-style", "--version=1.2.4", "--sha256=:no_check", "test"
+      ])
+
+      allow(CoreCaskTap.instance).to receive_messages(allow_bump?: true, git?: true,
+                                                      remote_repository: "Homebrew/homebrew-cask", install: nil)
+      allow(command.args.named).to receive(:to_casks).and_return([cask])
+
+      command.run
+
+      expect(Cask::CaskLoader.load(cask_path).version.to_s).to eq("1.2.4")
+    end
+
+    it "updates a cask disabled only on the current OS" do
+      cask_path = CoreCaskTap.instance.new_cask_path("test")
+      cask_path.dirname.mkpath
+      cask_path.write <<~RUBY
+        cask "test" do
+          version "1.2.3"
+          sha256 :no_check
+
+          on_#{OS.mac? ? "macos" : "linux"} do
+            disable! date: "2020-01-01", because: :unmaintained
+          end
+        end
+      RUBY
+      cask = Cask::CaskLoader.load(cask_path)
+      command = described_class.new([
+        "--write-only", "--no-audit", "--no-style", "--version=1.2.4", "--sha256=:no_check", "test"
+      ])
+
+      allow(CoreCaskTap.instance).to receive_messages(allow_bump?: true, git?: true,
+                                                      remote_repository: "Homebrew/homebrew-cask", install: nil)
+      allow(command.args.named).to receive(:to_casks).and_return([cask])
+
+      command.run
+
+      expect(Cask::CaskLoader.load(cask_path).version.to_s).to eq("1.2.4")
+    end
+  end
+
   describe "::generate_system_options" do
     # We simulate a macOS version older than the newest, as the method will use
     # the host macOS version instead of the default (the newest macOS version).

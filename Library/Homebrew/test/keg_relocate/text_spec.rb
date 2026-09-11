@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "keg_relocate"
+require "stringio"
 
 RSpec.describe Keg do
   subject(:keg) { described_class.new(HOMEBREW_CELLAR/"foo/1.0.0") }
@@ -45,6 +46,20 @@ RSpec.describe Keg do
 
     result = described_class.text_matches_in_file(file, dir.to_s, [], [], nil)
     expect(result.count).to eq 2
+  end
+
+  specify "::each_candidate_string still yields runs that are not valid UTF-8" do
+    setup_file
+
+    # `strings -` uses locale-dependent `isprint()`, so a run can include invalid
+    # UTF-8. Detection must not drop it, or the build prefix could go undetected.
+    fake_output = "2a53 \xFF\xFE#{dir}/bad\n1000 #{dir}/file.txt\n".b
+    allow(Utils).to receive(:popen_read).and_yield(StringIO.new(fake_output))
+
+    candidates = []
+    described_class.each_candidate_string(file, dir.to_s) { |candidate| candidates << candidate }
+
+    expect(candidates).to eq [["2a53", "\xFF\xFE#{dir}/bad".b], ["1000", "#{dir}/file.txt"]]
   end
 
   describe "#replace_text_in_files" do

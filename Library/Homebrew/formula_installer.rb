@@ -1280,12 +1280,7 @@ on_request: installed_on_request?, options:)
   def link(keg)
     Formula.clear_cache
 
-    cask_installed_with_formula_name = Cask::Caskroom.cask_installed?(formula.name)
-
-    if cask_installed_with_formula_name
-      ohai "#{formula.name} cask is installed, skipping link."
-      @link_keg = false
-    elsif skip_link? && !quiet?
+    if skip_link? && !quiet?
       ohai "Skipping 'link' on request"
       puts "You can run it manually using:"
       puts "  brew link #{formula.full_name}"

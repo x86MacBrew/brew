@@ -68,8 +68,8 @@ module Homebrew
         end
       end
 
-      sig { params(list: T::Array[T.any(Formula, Pathname, String)], string: String).returns(String) }
-      def inject_file_list(list, string)
+      sig { params(list: T::Array[T.any(Formula, Pathname, Cask::Cask, String)], string: String).returns(String) }
+      def append_indented_list(list, string)
         list.reduce(string.dup) { |acc, elem| acc << "  #{elem}\n" }
             .freeze
       end
@@ -208,18 +208,15 @@ module Homebrew
         repo = GitRepository.new(HOMEBREW_REPOSITORY)
         return unless repo.git_repository?
 
+        commands = ["rm -rf \"#{tap.path}\"",
+                    "brew tap #{tap.name}"]
         finding = Finding.new(
           "#{tap.full_name} was not tapped properly!",
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               You can solve this by tapping again:
-                rm -rf "#{tap.path}"
-                brew tap #{tap.name}
             EOS
-            commands: [
-              "rm -rf \"#{tap.path}\"",
-              "brew tap #{tap.name}",
-            ],
+            commands:,
           ),
         )
 
@@ -257,7 +254,7 @@ module Homebrew
         end
         return if files.empty?
 
-        inject_file_list(files, message)
+        append_indented_list files, message
       end
 
       sig { returns(T.nilable(Finding)) }
@@ -323,7 +320,6 @@ module Homebrew
 
           Unexpected static libraries:
         EOS
-
         Finding.new(msg) if msg.present?
       end
 
@@ -341,14 +337,13 @@ module Homebrew
           "libublio.pc", # NTFS-3G
         ]
 
-        msg = __check_stray_files("/usr/local/lib/pkgconfig", "*.pc", allow_list, <<~EOS
+        msg = __check_stray_files "/usr/local/lib/pkgconfig", "*.pc", allow_list, <<~EOS
           Unbrewed '.pc' files were found in /usr/local/lib/pkgconfig.
           If you didn't put them there on purpose they could cause problems when
           building Homebrew formulae and may need to be deleted.
 
           Unexpected '.pc' files:
         EOS
-        )
         Finding.new(msg) if msg.present?
       end
 
@@ -365,14 +360,13 @@ module Homebrew
           "libublio.la", # NTFS-3G
         ]
 
-        msg = __check_stray_files("/usr/local/lib", "*.la", allow_list, <<~EOS
+        msg = __check_stray_files "/usr/local/lib", "*.la", allow_list, <<~EOS
           Unbrewed '.la' files were found in /usr/local/lib.
           If you didn't put them there on purpose they could cause problems when
           building Homebrew formulae and may need to be deleted.
 
           Unexpected '.la' files:
         EOS
-        )
         Finding.new(msg) if msg.present?
       end
 
@@ -395,7 +389,6 @@ module Homebrew
 
           Unexpected header files:
         EOS
-
         Finding.new(msg) if msg.present?
       end
 
@@ -413,10 +406,9 @@ module Homebrew
         return if broken_symlinks.empty?
 
         Finding.new(
-          inject_file_list(broken_symlinks, <<~EOS
+          append_indented_list(broken_symlinks, <<~EOS),
             Broken symlinks were found:
           EOS
-          ),
           remediation: Finding::Remediation.new(
             text:     <<~EOS,
               Remove them with `brew cleanup`
@@ -431,16 +423,16 @@ module Homebrew
         world_writable = HOMEBREW_TEMP.stat.mode & 0777 == 0777
         return if !world_writable || HOMEBREW_TEMP.sticky?
 
+        commands = ["sudo chmod +t #{HOMEBREW_TEMP}"]
         Finding.new(
           <<~EOS,
             #{HOMEBREW_TEMP} is world-writable but does not have the sticky bit set.
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               To set it, run the following command:
-                sudo chmod +t #{HOMEBREW_TEMP}
             EOS
-            commands: ["sudo chmod +t #{HOMEBREW_TEMP}"],
+            commands:,
           ),
         )
       end
@@ -452,19 +444,17 @@ module Homebrew
         not_exist_dirs = Keg.must_exist_directories.reject(&:exist?)
         return if not_exist_dirs.empty?
 
+        commands = ["sudo mkdir -p #{not_exist_dirs.join(" ")}",
+                    "sudo chown -R #{current_user} #{not_exist_dirs.join(" ")}"]
         Finding.new(
-          <<~EOS,
+          append_indented_list(not_exist_dirs, <<~EOS),
             The following directories do not exist:
-            #{not_exist_dirs.join("\n")}
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               You should create these directories and change their ownership to your user.
-                sudo mkdir -p #{not_exist_dirs.join(" ")}
-                sudo chown -R #{current_user} #{not_exist_dirs.join(" ")}
             EOS
-            commands: ["sudo mkdir -p #{not_exist_dirs.join(" ")}",
-                       "sudo chown -R #{current_user} #{not_exist_dirs.join(" ")}"],
+            commands:,
           ),
         )
       end
@@ -476,21 +466,18 @@ module Homebrew
              .reject(&:writable?)
         return if not_writable_dirs.empty?
 
+        commands = ["sudo chown -R #{current_user} #{not_writable_dirs.join(" ")}",
+                    "chmod u+w #{not_writable_dirs.join(" ")}"]
         Finding.new(
-          <<~EOS,
+          append_indented_list(not_writable_dirs, <<~EOS),
             The following directories are not writable by your user:
-            #{not_writable_dirs.join("\n")}
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
-              You should change the ownership of these directories to your user.
-                sudo chown -R #{current_user} #{not_writable_dirs.join(" ")}
-
-              And make sure that your user has write permission.
-                chmod u+w #{not_writable_dirs.join(" ")}
+            text:     append_indented_list(commands, <<~EOS),
+              You should change the ownership of these directories to your user,
+              and make sure that you have write permission.
             EOS
-            commands: ["sudo chown -R #{current_user} #{not_writable_dirs.join(" ")}",
-                       "chmod u+w #{not_writable_dirs.join(" ")}"],
+            commands:,
           ),
         )
       end
@@ -501,16 +488,16 @@ module Homebrew
         return unless (HOMEBREW_REPOSITORY/"Cellar").exist?
         return unless (HOMEBREW_PREFIX/"Cellar").exist?
 
+        commands = ["rm -rf #{HOMEBREW_REPOSITORY}/Cellar"]
         Finding.new(
           <<~EOS,
             You have multiple Cellars.
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               You should delete #{HOMEBREW_REPOSITORY}/Cellar:
-                rm -rf #{HOMEBREW_REPOSITORY}/Cellar
             EOS
-            commands: ["rm -rf #{HOMEBREW_REPOSITORY}/Cellar"],
+            commands:,
           ),
         )
       end
@@ -534,7 +521,7 @@ module Homebrew
                           .select { |bn| File.exist? "/usr/bin/#{bn}" }
 
               unless conflicts.empty?
-                message = inject_file_list conflicts, <<~EOS
+                message = append_indented_list conflicts, <<~EOS
                   /usr/bin occurs before #{HOMEBREW_PREFIX}/bin in your PATH.
                   This means that system-provided programs will be used instead of those
                   provided by Homebrew.
@@ -576,7 +563,7 @@ module Homebrew
           remediation: Finding::Remediation.new(
             text:     <<~EOS,
               Consider setting your PATH for example like so:
-                  #{prepend_path}
+                #{prepend_path}
             EOS
             commands: [prepend_path].compact,
           ),
@@ -640,17 +627,17 @@ module Homebrew
 
         git = Formula["git"]
         git_upgrade_cmd = git.any_version_installed? ? "upgrade" : "install"
+        commands = ["brew #{git_upgrade_cmd} git"]
         Finding.new(
           <<~EOS,
             An outdated version (#{Utils::Git.version}) of Git was detected in your PATH.
             Git #{minimum_version} or newer is required for Homebrew.
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               Please upgrade:
-                brew #{git_upgrade_cmd} git
             EOS
-            commands: ["brew #{git_upgrade_cmd} git"],
+            commands:,
           ),
         )
       end
@@ -659,6 +646,7 @@ module Homebrew
       def check_for_git
         return if Utils::Git.available?
 
+        commands = ["brew install git"]
         Finding.new(
           <<~EOS,
             Git could not be found in your PATH.
@@ -666,11 +654,10 @@ module Homebrew
             checkouts instead of stable tarballs.
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               You may want to install Git:
-                brew install git
             EOS
-            commands: ["brew install git"],
+            commands:,
           ),
         )
       end
@@ -684,6 +671,7 @@ module Homebrew
         end
         return if autocrlf != "true"
 
+        commands = ["git config --global core.autocrlf input"]
         Finding.new(
           <<~EOS,
             Suspicious Git newline settings found.
@@ -692,12 +680,11 @@ module Homebrew
               core.autocrlf = #{autocrlf}
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               If you are not routinely dealing with Windows-based projects,
               consider removing these by running:
-                git config --global core.autocrlf input
             EOS
-            commands: ["git config --global core.autocrlf input"],
+            commands:,
           ),
         )
       end
@@ -715,20 +702,19 @@ module Homebrew
         found << gitconfig if gitconfig.exist?
         return if found.empty?
 
+        commands = ["rm -rf \"#{HOMEBREW_REPOSITORY}/.git/hooks\" \"#{HOMEBREW_REPOSITORY}/.gitconfig\""]
         Finding.new(
-          inject_file_list(found, <<~EOS
+          append_indented_list(found, <<~EOS),
             Git hooks or a repository-local `.gitconfig` were found in your Homebrew repository.
             Homebrew does not use these, and they can break Homebrew operations.
 
             Paths found:
           EOS
-          ),
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               Remove them with:
-                rm -rf "#{HOMEBREW_REPOSITORY}/.git/hooks" "#{HOMEBREW_REPOSITORY}/.gitconfig"
             EOS
-            commands: ["rm -rf \"#{HOMEBREW_REPOSITORY}/.git/hooks\" \"#{HOMEBREW_REPOSITORY}/.gitconfig\""],
+            commands:,
           ),
         )
       end
@@ -795,12 +781,12 @@ module Homebrew
         message = +""
 
         if deprecated_master.any?
-          message << <<~EOS
+          message += append_indented_list deprecated_master, <<~EOS
             The following repositories are on the deprecated "master" branch.
             The "master" branch sync will stop and this warning will become an error
             when Homebrew 5.2.0 is released (no earlier than 2026-06-10).
             Run `brew update` to migrate to "main":
-              #{deprecated_master.join("\n  ")}
+
           EOS
         end
 
@@ -810,10 +796,12 @@ module Homebrew
           message << <<~EOS
             Some taps are not on the default git origin branch and may not receive updates.
           EOS
-          remediation = Finding::Remediation.new(text: <<~EOS, commands: commands)
-            If this is a surprise to you, check out the default branch with:
-              #{commands.join("\n  ")}
-          EOS
+          remediation = Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              If this is a surprise to you, check out the default branch with:
+            EOS
+            commands:,
+          )
         end
 
         Finding.new(message, remediation:) if message.present?
@@ -830,13 +818,15 @@ module Homebrew
         return if tapped_deprecated_taps.empty?
 
         Finding.new(
-          <<~EOS,
+          append_indented_list(tapped_deprecated_taps.map { |name| "Homebrew/homebrew-#{name}" }, <<~EOS),
             You have the following deprecated, official taps tapped:
-              Homebrew/homebrew-#{tapped_deprecated_taps.join("\n  Homebrew/homebrew-")}
           EOS
-          remediation: <<~EOS,
-            Untap them with `brew untap`.
-          EOS
+          remediation: Finding::Remediation.new(
+            text:     <<~EOS,
+              Untap them with `brew untap`.
+            EOS
+            commands: ["brew untap"],
+          ),
         )
       end
 
@@ -864,8 +854,8 @@ module Homebrew
         installed_formula_message = installed_formulae_by_tap.sort_by(&:first).filter_map do |_tap_name, formulae|
           next if formulae.empty?
 
-          "  brew trust --formula #{formulae.sort.join(" ")}"
-        end.join("\n")
+          "brew trust --formula #{formulae.sort.join(" ")}"
+        end
         Cask::Caskroom.casks.each do |cask|
           next unless (tap = cask.tab.tap)
           next unless untrusted_tap_name_set.include?(tap.name)
@@ -876,61 +866,69 @@ module Homebrew
         installed_cask_message = installed_casks_by_tap.sort_by(&:first).filter_map do |_tap_name, casks|
           next if casks.empty?
 
-          "  brew trust --cask #{casks.sort.join(" ")}"
-        end.join("\n")
+          "brew trust --cask #{casks.sort.join(" ")}"
+        end
         installed_items_from_untrusted_taps = installed_formula_message.present? || installed_cask_message.present?
-        untap_message = "Untap them with:\n  brew untap #{untrusted_tap_names.join(" ")}"
+        untap_command = ["brew untap #{untrusted_tap_names.join(" ")}"]
+        untap_message = append_indented_list(untap_command, <<~EOS)
+          Untap them with:
+        EOS
         generic_trust_types = []
         generic_trust_commands = []
         if installed_formula_message.blank?
           generic_trust_types << "formulae"
-          generic_trust_commands << "  brew trust --formula <user>/<tap>/<formula>"
+          generic_trust_commands << "brew trust --formula <user>/<tap>/<formula>"
         end
         if installed_cask_message.blank?
           generic_trust_types << "casks"
-          generic_trust_commands << "  brew trust --cask <user>/<tap>/<cask>"
+          generic_trust_commands << "brew trust --cask <user>/<tap>/<cask>"
         end
         generic_trust_types << "commands"
-        generic_trust_commands << "  brew trust --command <user>/<tap>/<command>"
+        generic_trust_commands << "brew trust --command <user>/<tap>/<command>"
         generic_trust_prefix = if installed_items_from_untrusted_taps
           "Trust other specific"
         else
           "Trust specific"
         end
-        generic_trust_message = "#{generic_trust_prefix} #{Utils::Text.to_sentence(generic_trust_types)} with:\n" \
-                                "#{generic_trust_commands.join("\n")}"
+        generic_trust_message = append_indented_list generic_trust_commands, <<~EOS
+          #{generic_trust_prefix} #{Utils::Text.to_sentence(generic_trust_types)} with:
+        EOS
         trust_messages = if installed_items_from_untrusted_taps
-          ["Prefer trusting only the specific formulae, casks or commands you need."]
+          ["Prefer trusting only the specific formulae, casks or commands you need.\n"]
         else
           [untap_message]
         end
         if installed_formula_message.present?
-          trust_messages << "Trust installed formulae from these taps with:\n#{installed_formula_message}"
+          trust_messages << append_indented_list(installed_formula_message, <<~EOS)
+            Trust installed formulae from these taps with:
+          EOS
         end
         if installed_cask_message.present?
-          trust_messages << "Trust installed casks from these taps with:\n#{installed_cask_message}"
+          trust_messages << append_indented_list(installed_cask_message, <<~EOS)
+            Trust installed casks from these taps with:
+          EOS
         end
         trust_messages << generic_trust_message
-        trust_messages << <<~EOS.chomp
+        trust_messages << <<~EOS
           Whole-tap trust is broader and includes all current and future formulae,
           casks and commands from the listed taps. Trust whole taps with:
             brew trust #{untrusted_tap_names.join(" ")}
         EOS
         trust_messages << untap_message if installed_items_from_untrusted_taps
-        trust_messages << <<~EOS.chomp
+        trust_messages << <<~EOS
           For more information, see:
             #{Formatter.url("https://docs.brew.sh/Tap-Trust")}
         EOS
+        untrusted_message = append_indented_list untrusted_tap_names, <<~EOS
+          The following taps are not trusted:
+        EOS
+        untrusted_message += "\nHomebrew is currently ignoring formulae, casks and commands" \
+                             "\nfrom these taps because tap trust is required."
 
         Finding.new(
-          <<~EOS,
-            The following taps are not trusted:
-              #{untrusted_tap_names.join("\n  ")}
-
-            Homebrew is currently ignoring formulae, casks and commands from these taps because tap trust is required.
-          EOS
+          untrusted_message,
           links:       ["https://docs.brew.sh/Tap-Trust"],
-          remediation: trust_messages.join("\n"),
+          remediation: trust_messages.join,
         )
       end
 
@@ -966,9 +964,8 @@ module Homebrew
             Some frameworks can be picked up by CMake's build system and will likely
             cause the build to fail.
           EOS
-          remediation: <<~EOS,
+          remediation: append_indented_list(frameworks_found, <<~EOS),
             To compile CMake, you may wish to move these out of the way:
-            #{frameworks_found.join("\n")}
           EOS
         )
       end
@@ -995,17 +992,17 @@ module Homebrew
         end
         return if missing.empty?
 
+        commands = ["brew install #{missing.sort * " "}"]
         Finding.new(
           <<~EOS,
             Some installed formulae or casks are missing dependencies.
             Run `brew missing` for more details.
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               You should `brew install` the missing dependencies:
-                brew install #{missing.sort * " "}
             EOS
-            commands: ["brew install #{missing.sort * " "}"],
+            commands:,
           ),
         )
       end
@@ -1020,9 +1017,9 @@ module Homebrew
         Finding.new(
           "Some installed formulae are deprecated or disabled.",
           affects:     deprecated_or_disabled.map(&:full_name),
-          remediation: <<~EOS,
+          remediation: append_indented_list(deprecated_or_disabled.sort_by(&:full_name).uniq, <<~EOS),
             You should find replacements for the following formulae:
-                #{deprecated_or_disabled.sort_by(&:full_name).uniq * "\n  "}
+
           EOS
         )
       end
@@ -1036,9 +1033,9 @@ module Homebrew
         Finding.new(
           "Some installed casks are deprecated or disabled.",
           affects:     deprecated_or_disabled.map(&:token),
-          remediation: <<~EOS,
+          remediation: append_indented_list(deprecated_or_disabled.sort_by(&:token).uniq, <<~EOS),
             You should find replacements for the following casks:
-            #{deprecated_or_disabled.sort_by(&:token).uniq * "\n  "}
+
           EOS
         )
       end
@@ -1074,22 +1071,22 @@ module Homebrew
         message = <<~EOS
           You have uncommitted modifications to #{tap}.
         EOS
+        commands = ["git -C \"#{path}\" stash -u && git -C \"#{path}\" clean -d -f"]
         remediation = Finding::Remediation.new(
-          commands: ["git -C \"#{path}\" stash -u && git -C \"#{path}\" clean -d -f"],
-          text:     <<~EOS,
+          text:     append_indented_list(commands, <<~EOS),
             If this is a surprise to you, then you should stash these modifications.
             Stashing returns Homebrew to a pristine state but can be undone
             should you later need to do so for some reason.
 
-              git -C "#{path}" stash -u && git -C "#{path}" clean -d -f
           EOS
+          commands:,
         )
 
-        modified = status.split("\n")
-        message += inject_file_list modified, <<~EOS
+        modified = status.split("\n").map(&:strip)
+        message += append_indented_list modified, <<~EOS
           Uncommitted files:
-        EOS
 
+        EOS
         Finding.new(message, affects: modified, remediation:) if message.present?
       end
 
@@ -1142,9 +1139,8 @@ module Homebrew
         return if formula_unavailable_exceptions.empty?
 
         Finding.new(
-          <<~EOS,
+          append_indented_list(formula_unavailable_exceptions.map { |s| "#{s}\n" }, <<~EOS),
             Some installed formulae are not readable:
-              #{formula_unavailable_exceptions.join("\n\n  ")}
           EOS
           affects: formula_unavailable_exceptions,
         )
@@ -1173,10 +1169,9 @@ module Homebrew
           EOS
           affects:     unlinked.map(&:to_s),
           remediation: Finding::Remediation.new(
-            text:     inject_file_list(unlinked, <<~EOS
+            text:     append_indented_list(unlinked, <<~EOS),
               Run `brew link` on these:
             EOS
-            ),
             commands: unlinked.map { |unlink| "brew link #{unlink}" },
           ),
         )
@@ -1202,7 +1197,7 @@ module Homebrew
 
         message = "You have external commands with conflicting names.\n"
         cmd_map.each do |cmd_name, cmd_paths|
-          message += inject_file_list cmd_paths, <<~EOS
+          message += append_indented_list cmd_paths, <<~EOS
             Found command `#{cmd_name}` in the following places:
           EOS
         end
@@ -1229,10 +1224,9 @@ module Homebrew
         return if bad_tap_files.empty?
 
         Finding.new(bad_tap_files.keys.map do |tap|
-          <<~EOS
+          append_indented_list bad_tap_files[tap], <<~EOS
             Found Ruby file outside #{tap} tap formula directory.
             (#{tap.formula_dir}):
-              #{bad_tap_files[tap].join("\n  ")}
           EOS
         end.join("\n"))
       end
@@ -1286,9 +1280,9 @@ module Homebrew
 
           EOS
           affects:     deleted_formulae,
-          remediation: <<~EOS,
+          remediation: append_indented_list(deleted_formulae, <<~EOS),
             You should find replacements for the following formulae:
-              #{deleted_formulae.join("\n  ")}
+
           EOS
         )
       end
@@ -1300,16 +1294,18 @@ module Homebrew
         return if Homebrew::EnvConfig.devcmdrun?
         return unless CoreTap.instance.installed?
 
-        remediation = Finding::Remediation.new(text: <<~EOS, commands: ["brew untap #{CoreTap.instance.name}"])
-          Please remove it by running:
-           brew untap #{CoreTap.instance.name}
-        EOS
+        commands = ["brew untap #{CoreTap.instance.name}"]
         Finding.new(
           <<~EOS,
             You have an unnecessary local Core tap!
             This can cause problems installing up-to-date formulae.
           EOS
-          remediation:,
+          remediation: Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              Please remove it by running:
+            EOS
+            commands:,
+          ),
         )
       end
 
@@ -1322,16 +1318,18 @@ module Homebrew
         cask_tap = CoreCaskTap.instance
         return unless cask_tap.installed?
 
-        remediation = Finding::Remediation.new(text: <<~EOS, commands: ["brew untap #{cask_tap.name}"])
-          Please remove it by running:
-           brew untap #{cask_tap.name}
-        EOS
+        commands = ["brew untap #{cask_tap.name}"]
         Finding.new(
           <<~EOS,
             You have an unnecessary local Cask tap.
             This can cause problems installing up-to-date casks.
           EOS
-          remediation:,
+          remediation: Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              Please remove it by running:
+            EOS
+            commands:,
+          ),
         )
       end
 
@@ -1341,19 +1339,17 @@ module Homebrew
                                     .map(&:name)
         return if tapped_caskroom_taps.empty?
 
-        remediation = Finding::Remediation.new(
-          text:     <<~EOS,
-            Please remove it by running:
-             brew untap #{tapped_caskroom_taps.join(" ")}
-          EOS
-          commands: ["brew untap #{tapped_caskroom_taps.join(" ")}"],
-        )
+        commands = ["brew untap #{tapped_caskroom_taps.join(" ")}"]
         Finding.new(
-          <<~EOS,
+          append_indented_list(tapped_caskroom_taps, <<~EOS),
             You have the following deprecated Cask taps installed:
-              #{tapped_caskroom_taps.join("\n  ")}
           EOS
-          remediation:,
+          remediation: Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              Please remove it by running:
+            EOS
+            commands:,
+          ),
         )
       end
 
@@ -1370,12 +1366,15 @@ module Homebrew
         return if locations.empty?
 
         Finding.new(
-          locations.map do |l|
-            "Legacy install at #{l}."
-          end.join("\n"),
-          remediation: <<~EOS,
-            Run `brew uninstall --force brew-cask`.
+          append_indented_list(locations, <<~EOS),
+            Legacy installs at:
           EOS
+          remediation: Finding::Remediation.new(
+            text:     <<~EOS,
+              Run `brew uninstall --force brew-cask`.
+            EOS
+            commands: ["brew uninstall --force brew-cask"],
+          ),
         )
       end
 
@@ -1390,18 +1389,17 @@ module Homebrew
 
         return if !path.exist? || path.writable?
 
-        remediation = Finding::Remediation.new(
-          text:     <<~EOS,
-            To fix, run:
-              sudo chown -R #{current_user} #{user_tilde(path.to_s)}
-          EOS
-          commands: ["sudo chown -R #{current_user} #{user_tilde(path.to_s)}"],
-        )
+        commands = ["sudo chown -R #{current_user} #{user_tilde(path.to_s)}"]
         Finding.new(
           <<~EOS,
             The staging path #{user_tilde(path.to_s)} is not writable by the current user.
           EOS
-          remediation:,
+          remediation: Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              To fix this, run:
+            EOS
+            commands:,
+          ),
         )
       end
 
@@ -1410,19 +1408,17 @@ module Homebrew
         corrupt = Cask::Caskroom.corrupt_cask_dirs
         return if corrupt.empty?
 
-        fixes = corrupt.map { |token| "brew reinstall --cask --force #{token}" }
+        commands = corrupt.map { |token| "brew reinstall --cask --force #{token}" }
         Finding.new(
-          <<~EOS,
+          append_indented_list(corrupt.map { |token| "#{Cask::Caskroom.path}/#{token}" }, <<~EOS),
             Some directories in the Caskroom do not have valid metadata.
-              #{corrupt.map { |token| "#{Cask::Caskroom.path}/#{token}" }.join("\n  ")}
-            The following #{Utils.pluralize("cask", corrupt.count)} cannot be upgraded as-is.
+            The following #{Utils.pluralize("cask", corrupt.count)} cannot be upgraded as-is:
           EOS
           remediation: Finding::Remediation.new(
-            text:     <<~EOS,
+            text:     append_indented_list(commands, <<~EOS),
               To fix this, run:
-                #{fixes.join("\n  ")}
             EOS
-            commands: fixes,
+            commands:,
           ),
         )
       end
@@ -1503,24 +1499,30 @@ module Homebrew
           result = Utils.popen_read "/usr/bin/python", "--version", err: :out
 
           if result.include? "Python 2.7"
+            commands = ["sudo /usr/bin/python -m pip install -I setuptools"]
             Finding.new(
               <<~EOS,
                 Your Python installation has a broken version of setuptools.
               EOS
-              remediation: <<~EOS,
-                To fix, reinstall macOS or run:
-                  sudo /usr/bin/python -m pip install -I setuptools
-              EOS
+              remediation: Finding::Remediation.new(
+                text:     append_indented_list(commands, <<~EOS),
+                  To this fix, reinstall macOS or run:
+                EOS
+                commands:,
+              ),
             )
           else
+            commands = ["defaults write com.apple.versioner.python Version 2.7"]
             Finding.new(
               <<~EOS,
                 The system Python version is wrong.
               EOS
-              remediation: <<~EOS,
-                To fix, run:
-                  defaults write com.apple.versioner.python Version 2.7
-              EOS
+              remediation: Finding::Remediation.new(
+                text:     append_indented_list(commands, <<~EOS),
+                  To fix this, run:
+                EOS
+                commands:,
+              ),
             )
           end
         elsif result.stderr.include? "pkg_resources.DistributionNotFound"
@@ -1553,13 +1555,18 @@ module Homebrew
         remediation = if unused_shadowed_formula_tap_names.empty?
           "Their taps are in use, so you must use these full names throughout Homebrew."
         else
-          "Some of these can be resolved with:\n  brew untap #{unused_shadowed_formula_tap_names.join(" ")}"
+          commands = ["brew untap #{unused_shadowed_formula_tap_names.join(" ")}"]
+          Finding::Remediation.new(
+            text:     append_indented_list(commands, <<~EOS),
+              Some of these can be resolved with:
+            EOS
+            commands:,
+          )
         end
 
         Finding.new(
-          <<~EOS,
+          append_indented_list(shadowed_formula_full_names, <<~EOS),
             The following formulae have the same name as core formulae:
-              #{shadowed_formula_full_names.join("\n  ")}
           EOS
           remediation:,
         )
@@ -1581,20 +1588,20 @@ module Homebrew
         unused_shadowed_cask_tap_names = (shadowed_cask_tap_names - installed_cask_tap_names).sort
 
         remediation = if unused_shadowed_cask_tap_names.empty?
-          Finding::Remediation.new(
-            text: "Their taps are in use, so you must use these full names throughout Homebrew.",
-          )
+          "Their taps are in use, so you must use these full names throughout Homebrew.\n"
         else
+          commands = ["brew untap #{unused_shadowed_cask_tap_names.join(" ")}"]
           Finding::Remediation.new(
-            text:     "Some of these can be resolved with:",
-            commands: ["brew untap #{unused_shadowed_cask_tap_names.join(" ")}"],
+            text:     append_indented_list(commands, <<~EOS),
+              Some of these can be resolved with:
+            EOS
+            commands:,
           )
         end
 
         Finding.new(
-          <<~EOS,
+          append_indented_list(shadowed_cask_full_names, <<~EOS),
             The following casks have the same name as core casks:
-              #{shadowed_cask_full_names.join("\n  ")}
           EOS
           affects:     shadowed_cask_full_names,
           remediation:,

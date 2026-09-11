@@ -15,7 +15,7 @@ RSpec.describe Homebrew::Cmd::Link do
     keg = instance_double(Keg, rack: HOMEBREW_CELLAR/"testball", linked?: false, name: "testball")
 
     cmd = described_class.new(["testball"])
-    allow(cmd.args.named).to receive(:to_latest_kegs).and_return([keg])
+    allow(cmd.args.named).to receive(:to_kegs_to_casks).and_return([[keg], []])
     allow(Formulary).to receive(:keg_only?).with(keg.rack).and_return(false)
     allow(keg).to receive(:to_formula).and_return(formula)
     expect(Homebrew::Unlink).to receive(:unlink_link_overwrite_formulae).with(formula, verbose: false)
@@ -23,6 +23,27 @@ RSpec.describe Homebrew::Cmd::Link do
     expect(keg).to receive(:link).with(dry_run: false, verbose: false, overwrite: false).and_return(1)
 
     expect { cmd.run }.to output(/Linking .*1 symlinks created\./).to_stdout
+  end
+
+  it "links a given Cask's symlinked artifacts", :cask do
+    cask = Cask::CaskLoader.load(cask_path("with-binary"))
+    InstallHelper.install_without_artifacts_with_caskfile(cask)
+    cmd = described_class.new(["--cask", "with-binary"])
+    allow(cmd.args.named).to receive(:to_kegs_to_casks).and_return([[], [cask]])
+
+    expect { cmd.run }.to output(/Linking Binary 'binary'/).to_stdout
+    expect(cask.config.binarydir/"binary").to be_a_symlink
+  end
+
+  it "refuses to link a Cask over an existing file before linking anything", :cask do
+    cask = Cask::CaskLoader.load(cask_path("with-binary"))
+    InstallHelper.install_without_artifacts_with_caskfile(cask)
+    cask.config.binarydir.mkpath
+    FileUtils.touch cask.config.binarydir/"binary"
+    cmd = described_class.new(["--cask", "with-binary"])
+    allow(cmd.args.named).to receive(:to_kegs_to_casks).and_return([[], [cask]])
+
+    expect { cmd.run }.to raise_error(Cask::CaskError, /brew link --cask --overwrite with-binary/)
   end
 
   it "links a given Formula", :integration_test do
@@ -64,7 +85,7 @@ RSpec.describe Homebrew::Cmd::Link do
       )
       cmd = described_class.new([formula_name])
 
-      allow(cmd.args.named).to receive(:to_latest_kegs).and_return([keg])
+      allow(cmd.args.named).to receive(:to_kegs_to_casks).and_return([[keg], []])
       allow(Formulary).to receive(:keg_only?).with(keg.rack).and_return(true)
       allow(Homebrew::Unlink).to receive(:unlink_link_overwrite_formulae)
       allow(keg).to receive(:lock).and_yield

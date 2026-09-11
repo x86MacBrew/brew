@@ -976,8 +976,8 @@ Only list leaves that were manually installed\.
 .TP
 \fB\-p\fP, \fB\-\-installed\-as\-dependency\fP
 Only list leaves that were installed as dependencies\.
-.SS "\fBlink\fP, \fBln\fP \fR[\fIoptions\fP] \fIinstalled_formula\fP \fR[\.\.\.]"
-Symlink all of \fIformula\fP\[u2019]s installed files into Homebrew\[u2019]s prefix\. This is done automatically when you install formulae but can be useful for manual installations\.
+.SS "\fBlink\fP, \fBln\fP \fR[\fIoptions\fP] \fIinstalled_formula\fP|\fIinstalled_cask\fP \fR[\.\.\.]"
+Symlink all of \fIformula\fP\[u2019]s installed files or \fIcask\fP\[u2019]s binaries, manpages and shell completions into Homebrew\[u2019]s prefix\. This is done automatically when you install formulae and casks but can be useful for manual installations\.
 .TP
 \fB\-\-overwrite\fP
 Delete files that already exist in the prefix while linking\.
@@ -986,10 +986,16 @@ Delete files that already exist in the prefix while linking\.
 List files which would be linked or deleted by \fBbrew link \-\-overwrite\fP without actually linking or deleting any files\.
 .TP
 \fB\-f\fP, \fB\-\-force\fP
-Allow keg\-only formulae to be linked\.
+Allow keg\-only formulae to be linked\. When linking casks, overwrite existing symlinks originally from the same cask\.
 .TP
 \fB\-\-HEAD\fP
 Link the HEAD version of the formula if it is installed\.
+.TP
+\fB\-\-formula\fP
+Treat all named arguments as formulae\.
+.TP
+\fB\-\-cask\fP
+Treat all named arguments as casks\.
 .SS "\fBlist\fP, \fBls\fP \fR[\fIoptions\fP] \fR[\fIinstalled_formula\fP|\fIinstalled_cask\fP \.\.\.]"
 List all installed formulae and casks\. If \fIformula\fP is provided, summarise the paths within its current keg\. If \fIcask\fP is provided, list its artifacts\.
 .TP
@@ -1447,11 +1453,17 @@ Treat all named arguments as formulae\.
 .TP
 \fB\-\-cask\fP
 Treat all named arguments as casks\.
-.SS "\fBunlink\fP \fR[\fB\-\-dry\-run\fP] \fIinstalled_formula\fP \fR[\.\.\.]"
-Remove symlinks for \fIformula\fP from Homebrew\[u2019]s prefix\. This can be useful for temporarily disabling a formula: \fBbrew unlink\fP \fIformula\fP \fB&&\fP \fIcommands\fP \fB&& brew link\fP \fIformula\fP
+.SS "\fBunlink\fP \fR[\fIoptions\fP] \fIinstalled_formula\fP|\fIinstalled_cask\fP \fR[\.\.\.]"
+Remove symlinks for \fIformula\fP or \fIcask\fP from Homebrew\[u2019]s prefix\. This can be useful for temporarily disabling a formula: \fBbrew unlink\fP \fIformula\fP \fB&&\fP \fIcommands\fP \fB&& brew link\fP \fIformula\fP
 .TP
 \fB\-n\fP, \fB\-\-dry\-run\fP
 List files which would be unlinked without actually unlinking or deleting any files\.
+.TP
+\fB\-\-formula\fP
+Treat all named arguments as formulae\.
+.TP
+\fB\-\-cask\fP
+Treat all named arguments as casks\.
 .SS "\fBunpin\fP \fR[\fB\-\-formula\fP] \fR[\fB\-\-cask\fP] \fIinstalled_formula\fP|\fIinstalled_cask\fP \fR[\.\.\.]"
 Unpin the specified package, allowing it to be upgraded by \fBbrew upgrade\fP \fIformula\fP or \fIcask\fP\&\. See also \fBpin\fP\&\.
 .TP
@@ -2360,7 +2372,7 @@ Don\[u2019]t check if the local system is set up correctly\.
 Build from source rather than building bottles\.
 .TP
 \fB\-\-build\-dependents\-from\-source\fP
-Build dependents from source rather than testing bottles\.
+Build a limited set of dependents from source in addition to testing bottles\. Up to 10 per formula per shard, prioritising popular dependents in a sharded group\.
 .TP
 \fB\-\-junit\fP
 generate a JUnit XML test results file\.

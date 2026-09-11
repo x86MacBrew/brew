@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "github_runner_matrix"
+require "bottle_transition"
 require "test/support/fixtures/testball"
 
 RSpec.describe GitHubRunnerMatrix, :no_api do
@@ -23,6 +24,7 @@ RSpec.describe GitHubRunnerMatrix, :no_api do
   end
 
   before do
+    allow_any_instance_of(BottleTransition).to receive(:required?).and_return(false)
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("HOMEBREW_LINUX_SELF_HOSTED", "false").and_return("false")
     allow(ENV).to receive(:fetch).with("HOMEBREW_MACOS_LONG_TIMEOUT", "false").and_return("false")
@@ -43,6 +45,203 @@ RSpec.describe GitHubRunnerMatrix, :no_api do
   end
 
   describe "#active_runner_specs_hash" do
+    it "builds bottles for Golden Gate, Tahoe and Sequoia" do
+      runners = described_class.new([], [], all_supported: true, dependent_matrix: false)
+                               .active_runner_specs_hash
+
+      expect(runners.map { |runner| runner.fetch(:name) })
+        .to eq(["macOS 27-arm64", "macOS 26-arm64", "macOS 15-arm64"])
+    end
+
+    it "uses a self-hosted runner for Golden Gate dependents with a two-hour timeout" do
+      ENV["GITHUB_RUN_ID"] = "12345"
+      allow(Formula).to receive(:all).and_return([testball, testball_depender].map(&:formula))
+      runners = described_class.new([testball], [], all_supported: false, dependent_matrix: true)
+                               .active_runner_specs_hash
+
+      expect(runners).to include(
+        include(name: "macOS 27-arm64", runner: "27-arm64-12345-deps", timeout: 120),
+        include(name: "macOS 26-arm64", runner: "macos-26", timeout: 360),
+        include(name: "macOS 15-arm64", runner: "macos-15", timeout: 360),
+      )
+    end
+
+    context "when bootstrapping a macOS release" do
+      before do
+        stub_const("GitHubRunnerMatrix::NEWEST_HOMEBREW_CORE_MACOS_RUNNER", :tahoe)
+        stub_const("GitHubRunnerMatrix::OLDEST_HOMEBREW_CORE_MACOS_RUNNER", :sonoma)
+        stub_const("HOMEBREW_MACOS_NEWEST_SUPPORTED", "26")
+      end
+
+      it "assigns exactly the default runners to an unenrolled formula" do
+        runners = described_class.new([testball], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).to contain_exactly(
+          "Linux arm64", "Linux x86_64", "macOS 26-arm64", "macOS 15-arm64", "macOS 14-arm64"
+        )
+      end
+
+      it "selects only already-bottled formulae for the transition runner" do
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(testball.formula).and_return(true)
+        runners = described_class.new([testball, testball_depender], [],
+                                      all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.find { |runner| runner[:name] == "macOS 27-arm64" })
+          .to include(testing_formulae: "testball")
+      end
+
+      it "does not add transition runners to dependent testing" do
+        allow_any_instance_of(BottleTransition).to receive(:required?).and_return(true)
+        allow(Formula).to receive(:all).and_return([testball, testball_depender].map(&:formula))
+        runners = described_class.new([testball], [], all_supported: false, dependent_matrix: true)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).not_to include("macOS 27-arm64")
+      end
+
+      it "includes changed dependencies needed by an already-bottled formula" do
+        allow_any_instance_of(BottleTransition).to receive(:required?)
+          .with(testball_depender.formula).and_return(true)
+        runners = described_class.new([testball, testball_depender], [],
+                                      all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.find { |runner| runner[:name] == "macOS 27-arm64" })
+          .to include(testing_formulae: "testball,testball-depender")
+      end
+
+      test_each([{ maximum_macos: :tahoe }, { arch: :x86_64 }, :linux]) do |requirement|
+        it "skips a covered parent whose changed dependency requires #{requirement}" do
+          dependency = setup_test_runner_formula("incompatible-dependency", [requirement])
+          covered = setup_test_runner_formula("covered", [dependency.name])
+          allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+          runners = described_class.new([dependency, covered], [], all_supported: false, dependent_matrix: false)
+                                   .active_runner_specs_hash
+
+          expect(runners.map { |runner| runner[:name] }).to contain_exactly(
+            "Linux arm64", "Linux x86_64", "macOS 26-arm64", "macOS 15-arm64", "macOS 14-arm64"
+          )
+        end
+      end
+
+      it "does not reuse a bottle for an incompatible changed dependency" do
+        dependency = setup_test_runner_formula("incompatible-dependency", [{ maximum_macos: :tahoe }])
+        dependency.formula.bottle_specification.sha256(arm64_golden_gate: "a" * 64)
+        covered = setup_test_runner_formula("covered", [dependency.name])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([dependency, covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).not_to include("macOS 27-arm64")
+      end
+
+      it "keeps standard runners when transition prerequisites are missing" do
+        testball
+        allow_any_instance_of(BottleTransition).to receive(:required?)
+          .with(testball_depender.formula).and_return(true)
+
+        runners = described_class.new([testball_depender], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).to contain_exactly(
+          "Linux arm64", "Linux x86_64", "macOS 26-arm64", "macOS 15-arm64", "macOS 14-arm64"
+        )
+      end
+
+      it "does not require build dependencies of unchanged bottled dependencies" do
+        setup_test_runner_formula("unbottled-tool")
+        dependency = setup_test_runner_formula("bottled-dependency", [{ "unbottled-tool" => :build }])
+        dependency.formula.bottle_specification.sha256(arm64_golden_gate: "a" * 64)
+        covered = setup_test_runner_formula("covered", [dependency.name])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.find { |runner| runner[:name] == "macOS 27-arm64" })
+          .to include(testing_formulae: "covered")
+      end
+
+      it "allows the runner to check older bottles for unchanged test-only dependencies" do
+        dependency = setup_test_runner_formula("test-only-dependency")
+        dependency.formula.bottle_specification.sha256(arm64_tahoe: "a" * 64)
+        covered = setup_test_runner_formula("covered", [{ dependency.name => :test }])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.find { |runner| runner[:name] == "macOS 27-arm64" })
+          .to include(testing_formulae: "covered")
+      end
+
+      test_each([nil, :tahoe, :arm64_linux]) do |bottle_tag|
+        it "skips a test-only dependency with #{bottle_tag || "no"} bottles" do
+          dependency = setup_test_runner_formula("test-only-dependency")
+          dependency.formula.bottle_specification.sha256(bottle_tag => "a" * 64) if bottle_tag
+          covered = setup_test_runner_formula("covered", [{ dependency.name => :test }])
+          allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+          runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                   .active_runner_specs_hash
+
+          expect(runners.map { |runner| runner[:name] }).to contain_exactly(
+            "Linux arm64", "Linux x86_64", "macOS 26-arm64", "macOS 15-arm64", "macOS 14-arm64"
+          )
+        end
+      end
+
+      it "checks dependencies of universal test-only bottles" do
+        setup_test_runner_formula("unbottled-tool")
+        dependency = setup_test_runner_formula("universal-dependency", ["unbottled-tool"])
+        dependency.formula.bottle_specification.sha256(all: "a" * 64)
+        covered = setup_test_runner_formula("covered", [{ dependency.name => :test }])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).not_to include("macOS 27-arm64")
+      end
+
+      it "allows older bottles for dependencies of universal test-only bottles" do
+        tool = setup_test_runner_formula("older-tool")
+        tool.formula.bottle_specification.sha256(arm64_tahoe: "a" * 64)
+        dependency = setup_test_runner_formula("universal-dependency", [tool.name])
+        dependency.formula.bottle_specification.sha256(all: "a" * 64)
+        covered = setup_test_runner_formula("covered", [{ dependency.name => :test }])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.find { |runner| runner[:name] == "macOS 27-arm64" })
+          .to include(testing_formulae: "covered")
+      end
+
+      it "requires current bottles for dependencies used at build, test and runtime" do
+        dependency = setup_test_runner_formula("shared-dependency")
+        dependency.formula.bottle_specification.sha256(arm64_tahoe: "a" * 64)
+        runtime = setup_test_runner_formula("runtime-dependency", [dependency.name])
+        runtime.formula.bottle_specification.sha256(arm64_golden_gate: "a" * 64)
+        covered = setup_test_runner_formula("covered", [{ dependency.name => [:build, :test] }, runtime.name])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).not_to include("macOS 27-arm64")
+      end
+
+      it "checks build dependencies of universal bottles" do
+        setup_test_runner_formula("unbottled-tool")
+        dependency = setup_test_runner_formula("universal-dependency", [{ "unbottled-tool" => :build }])
+        dependency.formula.bottle_specification.sha256(all: "a" * 64)
+        covered = setup_test_runner_formula("covered", [dependency.name])
+        allow_any_instance_of(BottleTransition).to receive(:required?).with(covered.formula).and_return(true)
+        runners = described_class.new([covered], [], all_supported: false, dependent_matrix: false)
+                                 .active_runner_specs_hash
+
+        expect(runners.map { |runner| runner[:name] }).not_to include("macOS 27-arm64")
+      end
+    end
+
     it "returns an object that responds to `#to_json`" do
       expect(
         described_class.new([], ["deleted"], all_supported: false, dependent_matrix: false)

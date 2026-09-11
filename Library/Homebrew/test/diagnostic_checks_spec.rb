@@ -6,9 +6,9 @@ require "diagnostic"
 RSpec.describe Homebrew::Diagnostic::Checks do
   subject(:checks) { described_class.new }
 
-  specify "#inject_file_list" do
-    expect(checks.inject_file_list([], "foo:\n")).to eq("foo:\n")
-    expect(checks.inject_file_list(%w[/a /b], "foo:\n")).to eq("foo:\n  /a\n  /b\n")
+  specify "#append_indented_list" do
+    expect(checks.append_indented_list([], "foo:\n")).to eq("foo:\n")
+    expect(checks.append_indented_list(%w[/a /b], "foo:\n")).to eq("foo:\n  /a\n  /b\n")
   end
 
   specify "#check_for_installed_developer_tools uses installation instructions" do
@@ -155,8 +155,8 @@ RSpec.describe Homebrew::Diagnostic::Checks do
         thirdparty/foo
         thirdparty/bar
 
-      Homebrew is currently ignoring formulae, casks and commands from these taps because tap trust is required.
-
+      Homebrew is currently ignoring formulae, casks and commands
+      from these taps because tap trust is required.
       Prefer trusting only the specific formulae, casks or commands you need.
       Trust installed formulae from these taps with:
         brew trust --formula thirdparty/bar/bar-formula
@@ -194,8 +194,8 @@ RSpec.describe Homebrew::Diagnostic::Checks do
         The following taps are not trusted:
           thirdparty/foo
 
-        Homebrew is currently ignoring formulae, casks and commands from these taps because tap trust is required.
-
+        Homebrew is currently ignoring formulae, casks and commands
+        from these taps because tap trust is required.
         Untap them with:
           brew untap thirdparty/foo
         Trust specific formulae, casks and commands with:
@@ -275,9 +275,9 @@ RSpec.describe Homebrew::Diagnostic::Checks do
 
     expect(checks.check_cask_corrupt_dirs&.to_s).to eq <<~EOS.rstrip
       Some directories in the Caskroom do not have valid metadata.
+      The following casks cannot be upgraded as-is:
         #{Cask::Caskroom.path}/google-chrome
         #{Cask::Caskroom.path}/docker-desktop
-      The following casks cannot be upgraded as-is.
 
       To fix this, run:
         brew reinstall --cask --force google-chrome

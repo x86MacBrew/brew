@@ -33,6 +33,38 @@ RSpec.describe Homebrew::DevCmd::BumpFormulaPr do
   end
 
   describe "#run" do
+    it "updates a formula disabled only on the current arch" do
+      formula_path = CoreTap.instance.new_formula_path("test")
+      formula_path.dirname.mkpath
+      formula_path.write <<~RUBY
+        class Test < Formula
+          url "https://brew.sh/test-1.2.3.tgz"
+          sha256 "#{"a" * 64}"
+
+          on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+            disable! date: "2020-01-01", because: :unmaintained
+          end
+        end
+      RUBY
+      formula = Formulary.factory(formula_path)
+      command = described_class.new([
+        "--write-only", "--no-audit", "--url=https://brew.sh/test-1.2.4.tgz", "--sha256=#{"b" * 64}", "test"
+      ])
+
+      allow(Utils::GemSetup).to receive(:install_bundler_gems!)
+      allow(CoreTap.instance).to receive_messages(allow_bump?: true, git?: true,
+                                                  remote_repository: "Homebrew/homebrew-core", install: nil)
+      allow(command).to receive_messages(check_new_version: nil, run_audit: false,
+                                         update_matching_version_resources!: {})
+      allow(PyPI).to receive(:update_python_resources!)
+      allow(command.args.named).to receive(:to_formulae).and_return([formula])
+      allow(Formula).to receive(:[]).with("test").and_return(formula)
+
+      command.run
+
+      expect(formula_path.read).to include('url "https://brew.sh/test-1.2.4.tgz"')
+    end
+
     it "updates a formula disabled only on the current OS" do
       formula_path = CoreTap.instance.new_formula_path("test")
       formula_path.dirname.mkpath
@@ -392,6 +424,38 @@ RSpec.describe Homebrew::DevCmd::BumpFormulaPr do
       expect(formula_path.read).to include("revision: \"#{"b" * 40}\"")
     end
 
+    it "updates revision for a git resource without a tag" do
+      old_revision = "b" * 40
+      new_revision = "a" * 40
+      formula_path = CoreTap.instance.new_formula_path("gitresourceball")
+      formula_path.dirname.mkpath
+      formula_path.write <<~RUBY
+        class Gitresourceball < Formula
+          url "https://brew.sh/gitresourceball-1.0.tar.gz"
+
+          resource "foo" do
+            url "https://brew.sh/foo.git",
+                revision: "#{old_revision}"
+            version "#{old_revision}"
+          end
+        end
+      RUBY
+      CoreTap.instance.clear_cache
+      Formulary.clear_cache
+      Formula.clear_cache
+      formula = Formulary.from_contents("gitresourceball", formula_path, formula_path.read)
+
+      resource = Resource.new("foo")
+      allow(Resource).to receive(:new).with("foo").and_return(resource)
+      allow(Resource).to receive(:new).with("gitresourceball").and_return(instance_double(Resource))
+      allow(resource).to receive(:fetch).and_return(mktmpdir)
+
+      resource_versions = { "foo" => { current_version: old_revision, latest_version: new_revision } }
+
+      expect(bump_formula_pr.update_resources!(formula, resource_versions:)).to eq({ "foo" => :success })
+      expect(formula_path.read).to include("revision: \"#{new_revision}\"", "version \"#{new_revision}\"")
+    end
+
     it "updates the URL for a non-git resource carrying a tag" do
       formula_path = CoreTap.instance.new_formula_path("tarballwithtag")
       formula_path.dirname.mkpath
@@ -444,6 +508,35 @@ RSpec.describe Homebrew::DevCmd::BumpFormulaPr do
       resource_versions = { "foo" => { current_version: "1.2.3", latest_version: "2.0.0" } }
 
       expect(bump_formula_pr.update_resources!(formula, resource_versions:)).to eq({ "foo" => :tag_unchanged })
+    end
+
+    it "reports git resources where new revision cannot be detected from new version" do
+      formula_path = CoreTap.instance.new_formula_path("sametagball")
+      formula_path.dirname.mkpath
+      formula_path.write <<~RUBY
+        class Sametagball < Formula
+          url "https://brew.sh/sametagball-1.0.tar.gz"
+
+          resource "foo" do
+            url "https://brew.sh/foo.git",
+                revision: "#{"a" * 40}"
+            version "1.2.3"
+          end
+        end
+      RUBY
+      CoreTap.instance.clear_cache
+      Formulary.clear_cache
+      Formula.clear_cache
+      formula = Formulary.from_contents("sametagball", formula_path, formula_path.read)
+
+      resource = Resource.new("foo")
+      allow(Resource).to receive(:new).with("foo").and_return(resource)
+      allow(Resource).to receive(:new).with("sametagball").and_return(instance_double(Resource))
+      allow(resource).to receive(:fetch).and_return(mktmpdir)
+
+      resource_versions = { "foo" => { current_version: "1.2.3", latest_version: "2.0.0" } }
+
+      expect(bump_formula_pr.update_resources!(formula, resource_versions:)).to eq({ "foo" => :revision_unresolved })
     end
 
     it "downgrades to requested version" do

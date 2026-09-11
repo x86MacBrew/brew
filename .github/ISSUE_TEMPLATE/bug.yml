@@ -18,7 +18,7 @@ body:
       options:
         - label: I ran `brew update` twice and am still able to reproduce my issue.
           required: true
-        - label: My "`brew doctor` output" above says `Your system is ready to brew` or a definitely unrelated `Tier` message.
+        - label: I have supplied my `brew doctor` output above and it seems unrelated to my issue.
           required: true
         - label: This issue's title and/or description do not reference a single formula e.g. `brew install wget`. If they do, open an issue at https://github.com/Homebrew/homebrew-core/issues/new/choose instead.
           required: true

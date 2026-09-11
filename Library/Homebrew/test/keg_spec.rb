@@ -134,10 +134,11 @@ RSpec.describe Keg do
       end
     end
 
-    it "fails when already linked" do
+    it "fails when already linked without unlinking" do
       keg.link
 
       expect { keg.link }.to raise_error(Keg::AlreadyLinkedError)
+      expect(keg).to be_linked
     end
 
     it "fails when files exist" do
@@ -151,6 +152,70 @@ RSpec.describe Keg do
       dst.make_symlink(nonexistent)
       keg.link
       expect(dst.readlink).to eq(src.relative_path_from(dst.dirname))
+    end
+
+    context "when a cask's binary artifact targets a file" do
+      let(:cask_binary) { HOMEBREW_PREFIX/"lib/helloworld" }
+
+      before do
+        touch cask_binary
+        source = cask_binary
+        allow(Cask::Caskroom).to receive(:casks).and_return([Cask::Cask.new("dotnet-sdk") { binary source }])
+      end
+
+      it "overwrites the cask's symlink with a trailing warning" do
+        dst.make_symlink(cask_binary)
+
+        expect { keg.link }.to output(<<~EOS).to_stderr
+          Warning: Overwrote symlinks from the dotnet-sdk cask:
+            #{dst}
+          To restore them, run:
+            brew unlink --formula foo && brew link --cask dotnet-sdk
+        EOS
+        expect(dst.readlink).to eq((keg/"bin/helloworld").relative_path_from(dst.dirname))
+      end
+
+      it "warns about the cask's symlink when overwriting and forgets it afterwards" do
+        dst.make_symlink(cask_binary)
+
+        expect { keg.link(overwrite: true) }.to output(/Overwrote symlinks from the dotnet-sdk cask/).to_stderr
+        keg.unlink
+        expect { keg.link }.not_to output.to_stderr
+      end
+
+      it "restores the cask's symlink in a pruned directory when a later file conflicts" do
+        completion = HOMEBREW_PREFIX/"share/fish/vendor_completions.d/helloworld.fish"
+        (keg/"share/fish/vendor_completions.d").mkpath
+        touch keg/"share/fish/vendor_completions.d/helloworld.fish"
+        touch keg/"share/zzz"
+        completion.dirname.mkpath
+        completion.make_symlink(cask_binary)
+        touch HOMEBREW_PREFIX/"share/zzz"
+        source = cask_binary
+        allow(Cask::Caskroom).to receive(:casks)
+          .and_return([Cask::Cask.new("dotnet-sdk") { binary source, target: completion }])
+
+        expect { keg.link }.to raise_error(Keg::ConflictError)
+        expect(completion.readlink).to eq(cask_binary)
+        expect { keg.link(dry_run: true, overwrite: true) }.not_to output.to_stderr
+      end
+
+      it "restores the cask's symlink when linking fails with any error" do
+        dst.make_symlink(cask_binary)
+        (keg/"share/info").mkpath
+        touch keg/"share/info/helloworld.info"
+        allow(Utils::Path).to receive(:install_info).and_raise("boom")
+
+        expect { keg.link }.to raise_error(RuntimeError, "boom")
+        expect(dst.readlink).to eq(cask_binary)
+      end
+
+      it "does not overwrite a symlink that doesn't resolve to the cask's binary" do
+        touch HOMEBREW_PREFIX/"lib/other"
+        dst.make_symlink(HOMEBREW_PREFIX/"lib/other")
+
+        expect { keg.link }.to raise_error(Keg::ConflictError)
+      end
     end
 
     context "with overwrite set to true" do

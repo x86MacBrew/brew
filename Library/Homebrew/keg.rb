@@ -216,6 +216,8 @@ class Keg
     @opt_record = T.let(HOMEBREW_PREFIX/"opt/#{name}", Pathname)
     @oldname_opt_records = T.let([], T::Array[Pathname])
     @require_relocation = T.let(false, T::Boolean)
+    @overwritten_cask_symlinks = T.let({}, T::Hash[Pathname, [String, Pathname]])
+    @cask_symlink_tokens = T.let(nil, T.nilable(T::Hash[Pathname, String]))
   end
 
   sig { returns(Pathname) }
@@ -572,11 +574,28 @@ class Keg
       end
     end
     make_relative_symlink(linked_keg_record, path, verbose:, dry_run:, overwrite:) unless dry_run
-  rescue LinkError
+    @overwritten_cask_symlinks.group_by { |_, (cask_token, _)| cask_token }.each do |cask_token, symlinks|
+      opoo <<~EOS
+        Overwrote symlinks from the #{cask_token} cask:
+          #{symlinks.map(&:first).join("\n  ")}
+        To restore them, run:
+          brew unlink --formula #{name} && brew link --cask #{cask_token}
+      EOS
+    end
+  rescue => e
+    raise if dry_run || e.is_a?(AlreadyLinkedError)
+
     unlink(verbose:)
+    @overwritten_cask_symlinks.each do |dst, (_, source)|
+      dst.dirname.mkpath
+      FileUtils.ln_sf(source, dst)
+    end
     raise
   else
     ObserverPathnameExtension.n
+  ensure
+    @overwritten_cask_symlinks.clear
+    @cask_symlink_tokens = nil
   end
 
   sig { void }
@@ -818,10 +837,13 @@ class Keg
       return
     end
 
-    dst.delete if overwrite && (dst.exist? || dst.symlink?)
+    if overwrite && (dst.exist? || dst.symlink?)
+      record_cask_symlink(dst)
+      dst.delete
+    end
     dst.make_relative_symlink(src)
   rescue Errno::EEXIST => e
-    raise ConflictError.new(self, src.relative_path_from(path), dst, e) if dst.exist?
+    raise ConflictError.new(self, src.relative_path_from(path), dst, e) if dst.exist? && record_cask_symlink(dst).nil?
 
     if dst.symlink?
       dst.unlink
@@ -842,6 +864,28 @@ class Keg
     elsif alias_symlink.symlink? || alias_symlink.exist?
       alias_symlink.delete
     end
+  end
+
+  # Casks skip linking over formula symlinks (`Cask::Artifact::Symlinked#conflicting_formula`) and
+  # formulae overwrite cask symlinks, so record `dst` for the trailing warning and rollback if it is one,
+  # returning the cask's token.
+  sig { params(dst: Pathname).returns(T.nilable(String)) }
+  def record_cask_symlink(dst)
+    return unless dst.symlink?
+
+    @cask_symlink_tokens ||= begin
+      require "cask/caskroom"
+      Cask::Caskroom.casks.each_with_object({}) do |cask, tokens|
+        cask.artifacts.each do |artifact|
+          next unless artifact.is_a?(Cask::Artifact::Symlinked)
+
+          tokens[artifact.target] = cask.token if artifact.target_links_to_source?
+        end
+      end
+    end
+    cask_token = @cask_symlink_tokens[dst]
+    @overwritten_cask_symlinks[dst] = [cask_token, dst.readlink] if cask_token
+    cask_token
   end
 
   protected

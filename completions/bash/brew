@@ -2134,9 +2134,11 @@ _brew_link() {
     -*)
       __brewcomp "
       --HEAD
+      --cask
       --debug
       --dry-run
       --force
+      --formula
       --help
       --overwrite
       --quiet
@@ -2147,6 +2149,7 @@ _brew_link() {
     *) ;;
   esac
   __brew_complete_installed_formulae
+  __brew_complete_installed_casks
 }
 
 _brew_linkage() {
@@ -3313,8 +3316,10 @@ _brew_unlink() {
   case "${cur}" in
     -*)
       __brewcomp "
+      --cask
       --debug
       --dry-run
+      --formula
       --help
       --quiet
       --verbose
@@ -3324,6 +3329,7 @@ _brew_unlink() {
     *) ;;
   esac
   __brew_complete_installed_formulae
+  __brew_complete_installed_casks
 }
 
 _brew_unpack() {

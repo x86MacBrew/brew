@@ -6,6 +6,10 @@ require "bundle/dsl"
 require "bundle/extensions/uv"
 
 RSpec.describe Homebrew::Bundle::Uv do
+  let(:uv_tool_list_args) do
+    [Pathname("uv"), "tool", "list", "--show-with", "--show-extras", "--show-version-specifiers"]
+  end
+
   describe "entries" do
     it "accepts a source that resolves on another machine" do
       entry = described_class.entry("ruff", source: "git+https://github.com/astral-sh/ruff.git")
@@ -110,10 +114,6 @@ RSpec.describe Homebrew::Bundle::Uv do
   describe "dumping" do
     subject(:dumper) { described_class }
 
-    let(:uv_tool_list_args) do
-      [Pathname("uv"), "tool", "list", "--show-with", "--show-extras", "--show-version-specifiers"]
-    end
-
     context "when uv is not installed" do
       before do
         described_class.reset!
@@ -152,6 +152,44 @@ RSpec.describe Homebrew::Bundle::Uv do
             source: nil,
           },
         ])
+      end
+
+      it "ignores executable entries when dumping packages" do
+        allow(Utils).to receive(:popen_read_text).with(*uv_tool_list_args, err: File::NULL).and_return(<<~OUTPUT)
+          v-example v1.2.3
+          - v-example
+          - v2
+          vulture v2.16
+          - vulture
+        OUTPUT
+
+        expect(dumper.dump).to eql(<<~BREWFILE.chomp)
+          uv "v-example"
+          uv "vulture"
+        BREWFILE
+      end
+
+      it "accepts headings with valid package-name forms and version strings" do
+        allow(Utils).to receive(:popen_read_text).with(*uv_tool_list_args, err: File::NULL).and_return(<<~OUTPUT)
+          a v1.0
+          7zip v1!2.0rc1+local
+          my-tool.name_2 v2.0
+          Vtool v1.0
+        OUTPUT
+
+        expect(dumper.dump).to eql(<<~BREWFILE.chomp)
+          uv "7zip"
+          uv "Vtool"
+          uv "a"
+          uv "my-tool.name_2"
+        BREWFILE
+      end
+
+      it "ignores lines whose first token starts with punctuation" do
+        allow(Utils).to receive(:popen_read_text).with(*uv_tool_list_args, err: File::NULL)
+                                                 .and_return("vulture v2.16\n-\tv2\n• v2\n_vtool v1.0\n")
+
+        expect(dumper.dump).to eql('uv "vulture"')
       end
 
       it "parses a git source from the version specifier and dumps it" do
@@ -452,6 +490,36 @@ RSpec.describe Homebrew::Bundle::Uv do
           expect(described_class.dump).to eql('uv "mkdocs", with: ["mkdocs-material<10"]')
         end
       end
+    end
+  end
+
+  describe "consumers of parsed tool lists" do
+    before do
+      described_class.reset!
+      allow(described_class).to receive(:package_manager_executable).and_return(Pathname.new("uv"))
+      allow(Utils).to receive(:popen_read_text).with(*uv_tool_list_args, err: File::NULL).and_return(<<~OUTPUT)
+        vulture v2.16 [required: git+https://example.com/vulture.git] [extras: cli] [with: httpx>=0.27]
+        - vulture
+        - v2
+        ruff v0.14.14
+        - ruff
+      OUTPUT
+    end
+
+    it "checks installed entries using parsed names and metadata" do
+      entries = [
+        Homebrew::Bundle::Dsl::Entry.new(:uv, "vulture[cli]", with:   ["httpx>=0.27"],
+                                                              source: "git+https://example.com/vulture.git"),
+        Homebrew::Bundle::Dsl::Entry.new(:uv, "-"),
+      ]
+
+      expect(described_class.check(entries)).to eql(["uv Tool - needs to be installed."])
+    end
+
+    it "selects only undeclared packages for cleanup" do
+      entries = [Homebrew::Bundle::Dsl::Entry.new(:uv, "vulture[cli]")]
+
+      expect(described_class.cleanup_items(entries)).to eql(["ruff"])
     end
   end
 

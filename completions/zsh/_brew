@@ -213,7 +213,7 @@ __brew_internal_commands() {
     'irb:Enter the interactive Homebrew Ruby shell'
     'leaves:List installed formulae that are not dependencies of another installed formula or cask'
     'lgtm:Run `brew typecheck`, `brew style --changed` and the relevant `brew tests`, `brew audit` and `brew test` checks in one go'
-    'link:Symlink all of formula'\''s installed files into Homebrew'\''s prefix'
+    'link:Symlink all of formula'\''s installed files or cask'\''s binaries, manpages and shell completions into Homebrew'\''s prefix'
     'linkage:Check the library links from the given formula kegs'
     'list:List all installed formulae and casks'
     'livecheck:Check for newer versions of formulae and/or casks from upstream'
@@ -254,7 +254,7 @@ __brew_internal_commands() {
     'unalias:Remove aliases'
     'unbottled:Show the unbottled dependents of formulae'
     'uninstall:Uninstall a formula or cask'
-    'unlink:Remove symlinks for formula from Homebrew'\''s prefix'
+    'unlink:Remove symlinks for formula or cask from Homebrew'\''s prefix'
     'unpack:Unpack the files for the formula or cask into subdirectories of the current working directory'
     'unpin:Unpin the specified package, allowing it to be upgraded by `brew upgrade` formula or cask'
     'untap:Remove a tapped formula repository'
@@ -448,8 +448,8 @@ _brew_advisory_match() {
     '--help[Show this message]' \
     '(--all --json --output)--index[Emit the formula-identity index as JSON and exit]' \
     '(--all --index)--json[Output candidate records as a JSON array]' \
-    '(--no-history)--new-history[Walk `FormulaVersions` only for records whose reviewed ranges are not already in directory]' \
-    '(--new-history)--no-history[Skip the `FormulaVersions` walk for the `fixed` boundary; use the current `pkg_version` instead]' \
+    '(--no-history)--new-history[Skip `FormulaVersions` for existing terminal ranges unless their matching provenance changes]' \
+    '(--new-history)--no-history[Skip `FormulaVersions` walks for new ranges; use zero/current `pkg_version` as unverified boundaries]' \
     '(--index)--output[Write each record to directory as `BREW-formula-id.json`, preserving existing `published`/`ranges` fields]' \
     '--overrides[Load reviewed formula and advisory matching overrides from file]' \
     '--quiet[Make some output more quiet]' \
@@ -1806,16 +1806,20 @@ _brew_lgtm() {
 # brew link
 _brew_link() {
   _arguments \
-    '--HEAD[Link the HEAD version of the formula if it is installed]' \
+    '(--cask)--HEAD[Link the HEAD version of the formula if it is installed]' \
     '--debug[Display any debugging information]' \
     '--dry-run[List files which would be linked or deleted by `brew link --overwrite` without actually linking or deleting any files]' \
-    '--force[Allow keg-only formulae to be linked]' \
+    '--force[Allow keg-only formulae to be linked. When linking casks, overwrite existing symlinks originally from the same cask]' \
     '--help[Show this message]' \
     '--overwrite[Delete files that already exist in the prefix while linking]' \
     '--quiet[Make some output more quiet]' \
     '--verbose[Make some output more verbose]' \
     - installed_formula \
-    '*:installed_formula:__brew_installed_formulae'
+    '(--cask)--formula[Treat all named arguments as formulae]' \
+    '*:installed_formula:__brew_installed_formulae' \
+    - installed_cask \
+    '(--formula --HEAD)--cask[Treat all named arguments as casks]' \
+    '*:installed_cask:__brew_installed_casks'
 }
 
 # brew linkage
@@ -2554,7 +2558,7 @@ _brew_test() {
 _brew_test_bot() {
   _arguments \
     '(--only-formulae-detect)--added-formulae[Use these added formulae rather than running the formulae detection steps]' \
-    '--build-dependents-from-source[Build dependents from source rather than testing bottles]' \
+    '--build-dependents-from-source[Build a limited set of dependents from source in addition to testing bottles. Up to 10 per formula per shard, prioritising popular dependents in a sharded group]' \
     '--build-from-source[Build from source rather than building bottles]' \
     '--cleanup[Clean all state from the Homebrew directory. Use with care!]' \
     '--debug[Display any debugging information]' \
@@ -2705,7 +2709,11 @@ _brew_unlink() {
     '--quiet[Make some output more quiet]' \
     '--verbose[Make some output more verbose]' \
     - installed_formula \
-    '*:installed_formula:__brew_installed_formulae'
+    '(--cask)--formula[Treat all named arguments as formulae]' \
+    '*:installed_formula:__brew_installed_formulae' \
+    - installed_cask \
+    '(--formula)--cask[Treat all named arguments as casks]' \
+    '*:installed_cask:__brew_installed_casks'
 }
 
 # brew unpack

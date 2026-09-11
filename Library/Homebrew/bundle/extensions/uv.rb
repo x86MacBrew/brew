@@ -132,7 +132,7 @@ module Homebrew
           entries = T.let([], T::Array[Tool])
 
           output.each_line do |line|
-            match = line.match(/\A(\S+)\s+v\S+/)
+            match = line.match(/\A([A-Za-z0-9]\S*)\s+v\S+/)
             next unless match
 
             name = match[1]

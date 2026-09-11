@@ -33,6 +33,64 @@ RSpec.describe Formula do
     end
   end
 
+  describe "#run_test" do
+    let(:f) { Testball.new }
+    let(:testpath) { mktmpdir }
+
+    it "uses the test directory supplied by the parent" do
+      ENV["HOMEBREW_TEST_PATH"] = testpath.to_s
+      observed = []
+      allow(f).to receive(:test) do
+        observed.push(f.testpath, Pathname.pwd, Pathname(Dir.home), ENV.fetch("HOMEBREW_TEST_PATH", nil))
+      end
+
+      f.run_test
+
+      expect(observed).to eq([testpath, testpath, testpath, nil])
+    end
+
+    it "preserves an environment-supplied directory and its contents" do
+      ENV["HOMEBREW_TEST_PATH"] = testpath.to_s
+      (testpath/"existing").write("keep")
+      allow(f).to receive(:test)
+
+      f.run_test
+
+      expect(testpath/"existing").to exist
+    end
+
+    it "preserves an environment-supplied directory when the test fails" do
+      ENV["HOMEBREW_TEST_PATH"] = testpath.to_s
+      (testpath/"existing").write("keep")
+      allow(f).to receive(:test).and_raise("test failed")
+
+      expect { f.run_test }.to raise_error("test failed")
+      expect(testpath/"existing").to exist
+    end
+
+    it "preserves an environment-supplied directory when entering it fails" do
+      ENV["HOMEBREW_TEST_PATH"] = testpath.to_s
+      (testpath/"existing").write("keep")
+      allow(Dir).to receive(:chdir).and_call_original
+      allow(Dir).to receive(:chdir).with(testpath).and_raise(Errno::EACCES)
+
+      expect { f.run_test }.to raise_error(Errno::EACCES).and output("").to_stdout
+      expect(testpath/"existing").to exist
+    end
+
+    it "retains a generated test directory when requested" do
+      ENV.delete("HOMEBREW_TEST_PATH")
+      generated_testpath = T.let(nil, T.nilable(Pathname))
+      allow(f).to receive(:test) { generated_testpath = f.testpath }
+
+      f.run_test(keep_tmp: true)
+
+      expect(generated_testpath).to exist
+    ensure
+      FileUtils.rm_rf(generated_testpath) if generated_testpath
+    end
+  end
+
   describe "::new" do
     let(:klass) do
       Class.new(described_class) do

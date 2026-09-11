@@ -19,6 +19,7 @@ module RuboCop
         ].map { |option, _| :"on_#{option}" }.freeze,
         T::Array[Symbol],
       )
+      SHA256_ARCH_ORDER = [:arm, :intel, :x86_64, :arm64_linux, :x86_64_linux].freeze
 
       STANZA_GROUPS = T.let(
         [

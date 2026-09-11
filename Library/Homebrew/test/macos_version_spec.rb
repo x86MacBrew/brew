@@ -88,6 +88,24 @@ RSpec.describe MacOSVersion do
     expect(described_class.new("1000").unsupported_release?).to be true
   end
 
+  describe "release support" do
+    it "supports Sequoia, Tahoe and Golden Gate" do
+      expect(%w[15 26 27].map { |release| described_class.new(release).unsupported_release? }).to all(be false)
+    end
+
+    context "when running Sonoma" do
+      it "classifies the release as outdated" do
+        expect(described_class.new("14").outdated_release?).to be true
+      end
+    end
+
+    context "when running macOS 28" do
+      it "classifies the release as a prerelease" do
+        expect(described_class.new("28").prerelease?).to be true
+      end
+    end
+  end
+
   describe "after Big Sur" do
     specify "comparison with :big_sur" do
       expect(big_sur_major).to eq :big_sur

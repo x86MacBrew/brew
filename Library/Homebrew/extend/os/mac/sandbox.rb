@@ -21,6 +21,10 @@ module OS
       SEATBELT_ERB = <<~ERB
         (version 1)
         (debug deny) ; log all denied operations to /var/log/system.log
+        (deny network-outbound (to unix-socket))
+        <% if network_access_allowed %>
+        (allow network-outbound (to unix-socket (path-literal "/private/var/run/mDNSResponder")))
+        <% end %>
         <%= rules.join("\n") %>
         (allow file-write*
             (literal "/dev/ptmx")
@@ -34,6 +38,23 @@ module OS
         (deny file-write*) ; deny non-allowlist file write operations
         (deny file-write-setugid) ; deny non-allowlist file write SUID/SGID operations
         (deny file-write-mode) ; deny non-allowlist file write mode operations
+        (deny mach-lookup)
+        (allow mach-lookup
+            (global-name "com.apple.mobileassetd.v2")
+            (global-name "com.apple.sysmond")
+            (global-name "com.apple.bsd.dirhelper")
+            (global-name "com.apple.system.opendirectoryd.libinfo")
+            (global-name "com.apple.system.opendirectoryd.membership")
+            (global-name "com.apple.PowerManagement.control")
+            (global-name "com.apple.SecurityServer")
+            (global-name "com.apple.networkd")
+            (global-name "com.apple.ocspd")
+            (global-name "com.apple.trustd.agent")
+            (global-name "com.apple.SystemConfiguration.DNSConfiguration")
+            (global-name "com.apple.SystemConfiguration.configd")
+            )
+        (deny lsopen)
+        (deny appleevent-send)
         (allow process-exec
             (literal "/bin/ps")
             (with no-sandbox)
@@ -159,7 +180,12 @@ module OS
 
       sig { returns(String) }
       def seatbelt_profile
-        ERB.new(SEATBELT_ERB).result_with_hash(rules: profile.rules.map { |rule| seatbelt_rule(rule) })
+        ERB.new(SEATBELT_ERB).result_with_hash(
+          rules:                  profile.rules.map { |rule| seatbelt_rule(rule) },
+          network_access_allowed: profile.rules.none? do |rule|
+            !rule.allow && rule.operation == "network*" && rule.filter.nil?
+          end,
+        )
       end
 
       sig { params(rule: T.untyped).returns(String) }
@@ -167,6 +193,7 @@ module OS
         s = +"("
         s << (rule.allow ? "allow" : "deny")
         s << " #{rule.operation}"
+        s << " network-outbound" if rule.allow && rule.operation == "network*"
         s << " (#{seatbelt_path_filter(rule.filter)})" if rule.filter
         s << " (with #{rule.modifier})" if rule.modifier
         s << ")"

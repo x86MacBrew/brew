@@ -77,6 +77,14 @@ class TestRunnerFormula
     macos_version.public_send(requirement.comparator, requirement.version)
   end
 
+  sig { params(platform: Symbol, arch: Symbol, macos_version: T.nilable(MacOSVersion)).returns(T::Boolean) }
+  def compatible?(platform:, arch:, macos_version: nil)
+    return false if macos_version && !compatible_with?(macos_version)
+    return false unless public_send(:"#{platform}_compatible?")
+
+    !!public_send(:"#{arch}_compatible?")
+  end
+
   sig {
     params(
       platform:      Symbol,

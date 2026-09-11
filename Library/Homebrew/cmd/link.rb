@@ -12,9 +12,10 @@ module Homebrew
     class Link < AbstractCommand
       cmd_args do
         description <<~EOS
-          Symlink all of <formula>'s installed files into Homebrew's prefix.
-          This is done automatically when you install formulae but can be useful
-          for manual installations.
+          Symlink all of <formula>'s installed files or <cask>'s binaries, manpages
+          and shell completions into Homebrew's prefix. This is done automatically
+          when you install formulae and casks but can be useful for manual
+          installations.
         EOS
         switch "--overwrite",
                description: "Delete files that already exist in the prefix while linking."
@@ -22,11 +23,19 @@ module Homebrew
                description: "List files which would be linked or deleted by " \
                             "`brew link --overwrite` without actually linking or deleting any files."
         switch "-f", "--force",
-               description: "Allow keg-only formulae to be linked."
+               description: "Allow keg-only formulae to be linked. When linking casks, overwrite " \
+                            "existing symlinks originally from the same cask."
         switch "--HEAD",
                description: "Link the HEAD version of the formula if it is installed."
+        switch "--formula", "--formulae",
+               description: "Treat all named arguments as formulae."
+        switch "--cask", "--casks",
+               description: "Treat all named arguments as casks."
 
-        named_args :installed_formula, min: 1
+        conflicts "--formula", "--cask"
+        conflicts "--HEAD", "--cask"
+
+        named_args [:installed_formula, :installed_cask], min: 1
       end
 
       sig { override.void }
@@ -37,8 +46,13 @@ module Homebrew
           verbose:   args.verbose?,
         }
 
-        kegs = if args.HEAD?
-          args.named.to_kegs.group_by(&:name).filter_map do |name, resolved_kegs|
+        kegs, casks = if args.HEAD?
+          args.named.to_kegs_to_casks(only: :formula, method: :kegs)
+        else
+          args.named.to_kegs_to_casks(method: :latest_kegs)
+        end
+        if args.HEAD?
+          kegs = kegs.group_by(&:name).filter_map do |name, resolved_kegs|
             head_keg = resolved_kegs.find { |keg| keg.version.head? }
             next head_keg if head_keg.present?
 
@@ -50,8 +64,6 @@ module Homebrew
 
             nil
           end
-        else
-          args.named.to_latest_kegs
         end
 
         kegs.freeze.each do |keg|
@@ -125,6 +137,25 @@ module Homebrew
               puts_keg_only_path_message(keg)
             end
           end
+        end
+
+        casks.each do |cask|
+          raise Cask::CaskNotInstalledError, cask unless cask.installed?
+
+          artifacts = cask.artifacts.grep(Cask::Artifact::Symlinked)
+          conflict = artifacts.find do |artifact|
+            artifact.link_action(force: args.force?, overwrite: args.overwrite?) == :conflict
+          end
+          if conflict
+            raise Cask::CaskError, <<~EOS
+              Could not link #{cask}: #{conflict.target} already exists.
+              To force the link and overwrite all conflicting files:
+                brew link --cask --overwrite #{cask}
+            EOS
+          end
+
+          puts(args.overwrite? ? "Would remove:" : "Would link:") if args.dry_run?
+          artifacts.each { |artifact| artifact.install_phase(force: args.force?, **options) }
         end
       end
 

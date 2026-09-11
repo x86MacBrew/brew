@@ -38,12 +38,12 @@ module Homebrew
         flag   "--overrides=",
                description: "Load reviewed formula and advisory matching overrides from <file>."
         switch "--no-history",
-               description: "Skip the `FormulaVersions` walk for the `fixed` " \
-                            "boundary; use the current `pkg_version` instead."
+               description: "Skip `FormulaVersions` walks for new ranges; use " \
+                            "zero/current `pkg_version` as unverified boundaries."
         switch "--new-history",
                depends_on:  "--output=",
-               description: "Walk `FormulaVersions` only for records whose " \
-                            "reviewed ranges are not already in <directory>."
+               description: "Skip `FormulaVersions` for existing terminal ranges " \
+                            "unless their matching provenance changes."
         conflicts "--all", "--index"
         conflicts "--all", "--json"
         conflicts "--index", "--json"
@@ -61,8 +61,9 @@ module Homebrew
         Homebrew::API.with_no_api_env do
           latest_macos = MacOSVersion.new((HOMEBREW_MACOS_NEWEST_UNSUPPORTED.to_i - 1).to_s).to_sym
           Homebrew::SimulateSystem.with(os: latest_macos, arch: :arm) do
+            overrides = local_overrides
             matcher = Homebrew::Vulns::Match.new(repology:  local_repology,
-                                                 overrides: local_overrides,
+                                                 overrides:,
                                                  bulk:      args.all? || args.index?)
             next emit_index(matcher) if args.index?
 
@@ -92,8 +93,30 @@ module Homebrew
                   next if emitter.alias_protected?(record_id)
 
                   reviewed_state = emitter.reviewed_range_state(record_id)
-                  has_open_range = [:open, :mixed].include?(reviewed_state)
-                  has_terminal_range = [:terminal, :mixed].include?(reviewed_state)
+                  initial_introduction = false
+                  initial_introduction = true if !args.no_history? && status && reviewed_state.nil?
+                  candidate = matcher.to_brew_record(formula, hit)
+                  basis_changed = emitter.range_basis_changed?(candidate)
+                  if basis_changed && !initial_introduction && (args.no_history? || !status&.fixed?)
+                    emitter.emit(candidate)
+                    next
+                  end
+
+                  override = overrides&.advisory_override(formula.name, hit.identifiers)
+                  if initial_introduction && override&.state
+                    upstream_state = matcher.aggregate_state_at(formula, hit)
+                    if override.state != upstream_state
+                      emitter.record_history_unavailable(formula.name)
+                      opoo "#{record_id}: reviewed state override " \
+                           "#{upstream_state.nil? ? "cannot be checked against" : "disagrees with"} " \
+                           "upstream history; " \
+                           "skipping automatic update. Review its ranges and provenance together."
+                      next
+                    end
+                  end
+
+                  has_open_range = reviewed_state == :open
+                  has_terminal_range = reviewed_state == :terminal
                   transition = (status&.fixed? && has_open_range) ||
                                (status&.affected? && has_terminal_range)
                   if args.no_history? && transition
@@ -102,7 +125,7 @@ module Homebrew
                   end
 
                   walk_history = !args.no_history? && status&.fixed?
-                  walk_history &&= emitter.history_required?(record_id) if args.new_history?
+                  walk_history &&= basis_changed || emitter.history_required?(record_id) if args.new_history?
                   emitter.record_history_walk if walk_history
                   first_fixed = matcher.first_fixed_version(formula, hit) if walk_history
                   fixed_boundary = T.let(nil, T.nilable(String))
@@ -127,7 +150,21 @@ module Homebrew
                     next
                   end
 
-                  first_reintroduced = T.let(nil, T.nilable(String))
+                  first_introduced = T.let(nil, T.nilable(String))
+                  if initial_introduction
+                    emitter.record_history_walk
+                    introduced = matcher.first_introduced_version(formula, hit, first_fixed: fixed_boundary)
+                    case introduced
+                    when String
+                      first_introduced = introduced
+                    when :history_unavailable
+                      emitter.record_history_unavailable(formula.name)
+                      opoo "#{record_id}: affected introduction cannot be established; skipping automatic update"
+                      next
+                    else
+                      raise TypeError, "unexpected introduction-history result: #{introduced.inspect}"
+                    end
+                  end
                   if status&.affected? && has_terminal_range
                     emitter.record_history_walk
                     reintroduced = matcher.first_reintroduced_version(formula, hit)
@@ -141,11 +178,15 @@ module Homebrew
                       Homebrew.failed = true
                       next
                     end
-                    first_reintroduced = reintroduced
+                    first_introduced = reintroduced
                   end
 
-                  emitter << matcher.to_brew_record(formula, hit, first_fixed:        fixed_boundary,
-                                                                  first_reintroduced:)
+                  candidate = matcher.to_brew_record(formula, hit, first_fixed: fixed_boundary, first_introduced:)
+                  # A metadata override does not replace the upstream constraints
+                  # used by the history walk. Correct its reviewed ranges and
+                  # provenance together instead of automatically certifying them.
+                  revalidated = !fixed_boundary.nil? && !override&.fixed_in_overridden
+                  emitter.emit(candidate, revalidated:, initial_introduction:)
                 end
               end
             rescue Homebrew::Vulns::OSV::Error => e
@@ -232,6 +273,9 @@ module Homebrew
         sig { params(_record_id: String).returns(T::Boolean) }
         def alias_protected?(_record_id) = false
 
+        sig { params(_record: T::Hash[Symbol, T.untyped]).returns(T::Boolean) }
+        def range_basis_changed?(_record) = false
+
         sig { params(_record_id: String).returns(T::Boolean) }
         def history_required?(_record_id) = true
 
@@ -250,8 +294,10 @@ module Homebrew
         sig { params(_record_id: String, _boundary: String).returns(T::Boolean) }
         def reintroduction_boundary_valid?(_record_id, _boundary) = true
 
-        sig { params(record: T::Hash[Symbol, T.untyped]).void }
-        def <<(record); end
+        sig {
+          params(record: T::Hash[Symbol, T.untyped], revalidated: T::Boolean, initial_introduction: T::Boolean).void
+        }
+        def emit(record, revalidated: false, initial_introduction: false); end
 
         sig { void }
         def finish; end
@@ -268,6 +314,7 @@ module Homebrew
           @written = T.let(0, Integer)
           @unchanged = T.let(0, Integer)
           @skipped_generated = T.let(0, Integer)
+          @basis_changed = T.let(0, Integer)
           @history_walks = T.let(0, Integer)
           @history_unavailable_by_formula = T.let({}, T::Hash[String, Integer])
           @alias_targets = T.let({}, T::Hash[String, T::Array[String]])
@@ -309,6 +356,7 @@ module Homebrew
             end
 
             writable = T.let([], T::Array[String])
+            generated = T.let([], T::Array[String])
             paths.each do |path|
               existing = alias_record(path)
               if existing == :malformed
@@ -324,10 +372,18 @@ module Homebrew
                 next
               end
 
+              affected = existing["affected"]
+              names = affected_formula_names(existing)
+              if !affected.is_a?(Array) || !affected.one? || names != [formula_name]
+                errors << "#{canonical_id}: #{path} has unsupported affected entries for " \
+                          "#{formula_name}; leaving family unchanged"
+                next
+              end
+
               database_specific = existing["database_specific"]
               source = database_specific["source"] if database_specific.is_a?(Hash)
               if source == "generated"
-                generated_paths << path
+                generated << path
                 next
               end
               if source != "matched"
@@ -336,21 +392,27 @@ module Homebrew
                 next
               end
 
-              affected = existing["affected"]
-              names = affected_formula_names(existing)
-              if !affected.is_a?(Array) || !affected.one? || names != [formula_name]
-                errors << "#{canonical_id}: #{path} has unsupported affected entries for " \
-                          "#{formula_name}; leaving family unchanged"
-                next
-              end
               writable << path
             end
 
+            if generated.any?
+              targets[canonical_id] = []
+              protected[canonical_id] = true
+              generated_paths.concat(generated)
+              next
+            end
+            if writable.length > 1
+              errors << "#{canonical_id}: multiple alias records found; consolidate the family before matching"
+              next
+            end
+
             canonical_path = record_path(canonical_id)
-            writable << canonical_path unless File.file?(canonical_path)
-            writable.uniq!
-            targets[canonical_id] = writable
-            protected[canonical_id] = writable.empty?
+            targets[canonical_id] = if writable.one?
+              writable
+            else
+              [canonical_path]
+            end
+            protected[canonical_id] = false
           end
           return errors.uniq if errors.any?
 
@@ -365,19 +427,54 @@ module Homebrew
           @protected_aliases.fetch(record_id, false)
         end
 
-        sig { override.params(record: T::Hash[Symbol, T.untyped]).void }
-        def <<(record)
-          updates = alias_target_paths(record.fetch(:id)).map do |path|
+        sig { override.params(record: T::Hash[Symbol, T.untyped]).returns(T::Boolean) }
+        def range_basis_changed?(record)
+          alias_target_paths(record.fetch(:id)).any? do |path|
+            next false unless File.file?(path)
+
+            existing = alias_record(path)
+            existing.is_a?(Hash) && range_basis(existing) != range_basis(record)
+          end
+        end
+
+        sig {
+          override.params(record: T::Hash[Symbol, T.untyped], revalidated: T::Boolean, initial_introduction: T::Boolean).void
+        }
+        def emit(record, revalidated: false, initial_introduction: false)
+          updates = alias_target_paths(record.fetch(:id)).filter_map do |path|
             candidate = record.deep_dup
             existing = alias_record(path) if File.file?(path)
             if existing.is_a?(Hash)
               candidate[:id] = existing.fetch("id")
               candidate[:upstream] = (Array(existing["upstream"]) + Array(candidate[:upstream])).uniq
+              existing_basis = range_basis(existing)
+              candidate_basis = range_basis(candidate)
+              if existing_basis != candidate_basis
+                ranges = JSON.parse(JSON.generate(candidate)).dig("affected", 0, "ranges")
+                existing_ranges = existing.dig("affected", 0, "ranges")
+                no_reviewed_ranges = Array(existing_ranges).none? do |range|
+                  Homebrew::Vulns::OsvExport.ranges_open?([range]) ||
+                    Homebrew::Vulns::OsvExport.ranges_terminal?([range])
+                end
+                compatible = ranges == existing_ranges || (@close_open_ranges && no_reviewed_ranges)
+                if !compatible || (!revalidated && !Homebrew::Vulns::OsvExport.ranges_open?(ranges))
+                  fields = (existing_basis.keys | candidate_basis.keys).reject do |key|
+                    existing_basis[key] == candidate_basis[key]
+                  end
+                  Utils::Output.onoe "#{candidate[:id]}: reviewed range basis changed (#{fields.join(", ")}); " \
+                                     "leaving it unchanged.\n" \
+                                     "Run advisory-match for this formula with --json and history enabled,\n" \
+                                     "then review and update its ranges and provenance together."
+                  @basis_changed += 1
+                  Homebrew.failed = true
+                  next
+                end
+              end
             elsif File.file?(path)
               candidate[:id] = File.basename(path, ".json")
             end
             merged = Homebrew::Vulns::OsvExport.merge_existing(
-              path, candidate, close_open_ranges: @close_open_ranges
+              path, candidate, close_open_ranges: @close_open_ranges, initial_introduction:
             )
             [path, merged]
           end
@@ -391,6 +488,61 @@ module Homebrew
             puts "  wrote #{path}" if @verbose
             @written += 1
           end
+        end
+
+        # Keep every strategy and runtime subject. Ignore version values and
+        # resource labels, but retain checkability and separate copies of the
+        # same resource package: either can change the aggregate history.
+        sig { params(record: T::Hash[T.untyped, T.untyped]).returns(T::Hash[String, T.untyped]) }
+        def range_basis(record)
+          record = JSON.parse(JSON.generate(record))
+          affected = record["affected"]
+          return {} unless affected.is_a?(Array)
+          return {} unless affected.one?
+
+          entry = affected.fetch(0)
+          return {} unless entry.is_a?(Hash)
+
+          ecosystem_specific = entry["ecosystem_specific"]
+          ecosystem_specific = {} unless ecosystem_specific.is_a?(Hash)
+
+          database_specific = record["database_specific"]
+          evidence = Array(database_specific["upstream_evidence"]) if database_specific.is_a?(Hash)
+          evidence = Array(evidence).grep(Hash)
+          subjects = evidence.group_by { |row| row["resource"] }.map do |resource, rows|
+            identities = rows.filter_map do |row|
+              identity = subject_identity(row)
+              next if identity.empty?
+
+              [row["strategy"].to_s, identity, row["subject_version"].nil? ? "unknown" : "versioned"]
+            end
+            [resource ? "resource" : "primary", identities.uniq.sort]
+          end
+          basis = { "subjects" => subjects.sort }
+          resource_purl = ecosystem_specific["resource_purl"]
+          if resource_purl.is_a?(String)
+            resource = evidence.find { |row| row["resource"] && row["key"] == resource_purl }
+            basis["resource_purl"] = resource ? subject_identity(resource) : [unversioned_key(resource_purl)]
+          end
+          upstream_fixed_in = ecosystem_specific["upstream_fixed_in"]
+          basis["upstream_fixed_in"] = upstream_fixed_in if upstream_fixed_in.is_a?(String)
+          basis
+        end
+
+        sig { params(evidence: T::Hash[String, T.untyped]).returns(T::Array[String]) }
+        def subject_identity(evidence)
+          ecosystem = evidence["ecosystem"]
+          name = evidence["name"]
+          return [ecosystem, name] if ecosystem.is_a?(String) && name.is_a?(String)
+
+          key = evidence["key"]
+          key.is_a?(String) ? [unversioned_key(key)] : []
+        end
+
+        sig { params(key: String).returns(String) }
+        def unversioned_key(key)
+          key = key.delete_prefix("upstream:")
+          key.start_with?("pkg:") ? key.sub(%r{@[^/@]*\z}, "") : key
         end
 
         sig { override.params(record_id: String).returns(T::Boolean) }
@@ -439,10 +591,7 @@ module Homebrew
           states = states_by_path.flatten
           return if states.empty?
 
-          unique = states.uniq
-          return :mixed if unique.include?(:open) && unique.include?(:terminal)
-
-          unique.fetch(0)
+          states.fetch(0)
         end
 
         sig { override.params(record_id: String, boundary: String).returns(T::Boolean) }
@@ -588,7 +737,8 @@ module Homebrew
           history_unavailable = @history_unavailable_by_formula.values.sum
           Utils::Output.ohai "#{@written} records written to #{@dir} " \
                              "(#{@unchanged} unchanged, #{@skipped_generated} generated left as-is, " \
-                             "#{@history_walks} history walks, #{history_unavailable} history-unavailable skips)"
+                             "#{@history_walks} history walks, #{history_unavailable} history-unavailable skips, " \
+                             "#{@basis_changed} range-basis skips)"
           return if @history_unavailable_by_formula.empty?
 
           puts "  Unavailable history by formula:"
@@ -603,8 +753,10 @@ module Homebrew
           @records = T.let([], T::Array[T::Hash[Symbol, T.untyped]])
         end
 
-        sig { override.params(record: T::Hash[Symbol, T.untyped]).void }
-        def <<(record)
+        sig {
+          override.params(record: T::Hash[Symbol, T.untyped], revalidated: T::Boolean, initial_introduction: T::Boolean).void
+        }
+        def emit(record, revalidated: false, initial_introduction: false)
           @records << record
         end
 
@@ -621,8 +773,10 @@ module Homebrew
           @count = T.let(0, Integer)
         end
 
-        sig { override.params(_record: T::Hash[Symbol, T.untyped]).void }
-        def <<(_record)
+        sig {
+          override.params(_record: T::Hash[Symbol, T.untyped], revalidated: T::Boolean, initial_introduction: T::Boolean).void
+        }
+        def emit(_record, revalidated: false, initial_introduction: false)
           @count += 1
         end
 

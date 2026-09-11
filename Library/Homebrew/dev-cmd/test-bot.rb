@@ -26,7 +26,8 @@ module Homebrew
         switch "--build-from-source",
                description: "Build from source rather than building bottles."
         switch "--build-dependents-from-source",
-               description: "Build dependents from source rather than testing bottles."
+               description: "Build a limited set of dependents from source in addition to testing bottles. " \
+                            "Up to 10 per formula per shard, prioritising popular dependents in a sharded group."
         switch "--junit",
                description: "generate a JUnit XML test results file."
         switch "--keep-old",

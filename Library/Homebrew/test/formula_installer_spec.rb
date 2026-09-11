@@ -1129,7 +1129,6 @@ RSpec.describe FormulaInstaller do
 
     before do
       allow(Formula).to receive(:clear_cache)
-      allow(Cask::Caskroom).to receive(:path).and_return(Pathname("/tmp/nonexistent-caskroom"))
       allow(versioned_formula).to receive_messages(link_overwrite_formulae: [other_version],
                                                    any_version_installed?:  false)
       allow(other_version).to receive(:any_version_installed?).and_return(true)

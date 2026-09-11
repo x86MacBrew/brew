@@ -24,6 +24,36 @@ RSpec.describe Homebrew::DevCmd::Bump do
       disable! date: "2020-01-01", because: "Testing"
     end
   end
+  let(:f_partially_disabled_arch) do
+    path = mktmpdir/"partially_disabled_arch_formula.rb"
+    path.write <<~RUBY
+      class PartiallyDisabledArchFormula < Formula
+        desc "Partially disabled (arch) formula"
+        url "https://brew.sh/test-1.2.3.tgz"
+
+        on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+          disable! date: "2020-01-01", because: "Testing"
+        end
+      end
+    RUBY
+
+    Formulary.factory(path)
+  end
+  let(:f_partially_disabled_os) do
+    path = mktmpdir/"partially_disabled_os_formula.rb"
+    path.write <<~RUBY
+      class PartiallyDisabledOsFormula < Formula
+        desc "Partially disabled (OS) formula"
+        url "https://brew.sh/test-1.2.3.tgz"
+
+        on_#{OS.mac? ? "macos" : "linux"} do
+          disable! date: "2020-01-01", because: "Testing"
+        end
+      end
+    RUBY
+
+    Formulary.factory(path)
+  end
   let(:f_head_only) do
     formula("head_only_formula") do
       T.bind(self, T.class_of(Formula))
@@ -51,6 +81,34 @@ RSpec.describe Homebrew::DevCmd::Bump do
         desc "Disabled cask"
 
         disable! date: "2020-01-01", because: "Testing"
+      end
+    RUBY
+  end
+  let(:c_partially_disabled_arch) do
+    Cask::CaskLoader.load(<<~RUBY)
+      cask "partially_disabled_arch_cask" do
+        version "1.2.3"
+
+        name "Partially Disabled Arch Cask"
+        desc "Partially disabled (arch) cask"
+
+        on_#{Hardware::CPU.arm? ? "arm" : "intel"} do
+          disable! date: "2020-01-01", because: "Testing"
+        end
+      end
+    RUBY
+  end
+  let(:c_partially_disabled_os) do
+    Cask::CaskLoader.load(<<~RUBY)
+      cask "partially_disabled_os_cask" do
+        version "1.2.3"
+
+        name "Partially Disabled OS Cask"
+        desc "Partially disabled (OS) cask"
+
+        on_#{OS.mac? ? "macos" : "linux"} do
+          disable! date: "2020-01-01", because: "Testing"
+        end
       end
     RUBY
   end
@@ -94,21 +152,6 @@ RSpec.describe Homebrew::DevCmd::Bump do
   end
 
   describe "::skip_ineligible_package!" do
-    it "does not skip a cask disabled only on the current OS" do
-      cask = Cask::CaskLoader.load(<<~RUBY)
-        cask "partially-disabled" do
-          version "1.2.3"
-          url "https://brew.sh/test-1.2.3.tgz"
-
-          on_#{OS.mac? ? "macos" : "linux"} do
-            disable! date: "2020-01-01", because: :unmaintained
-          end
-        end
-      RUBY
-
-      expect(bump.skip_ineligible_package!(cask)).to be(false)
-    end
-
     it "prints a message for disabled formulae" do
       expect { expect(bump.skip_ineligible_package!(f_disabled)).to be(true) }
         .to output(/Formula is disabled so not accepting updates\./).to_stdout
@@ -153,6 +196,30 @@ RSpec.describe Homebrew::DevCmd::Bump do
       allow(f_basic).to receive(:tap).and_return(instance_double(Tap, allow_bump?: true))
 
       expect { expect(bump.skip_ineligible_package!(f_basic)).to be(false) }
+        .to not_to_output.to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "returns false for a formula disabled only on the current arch" do
+      expect { expect(bump.skip_ineligible_package!(f_partially_disabled_arch)).to be(false) }
+        .to not_to_output.to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "returns false for a formula disabled only on the current os" do
+      expect { expect(bump.skip_ineligible_package!(f_partially_disabled_os)).to be(false) }
+        .to not_to_output.to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "returns false for a cask disabled only on the current arch" do
+      expect { expect(bump.skip_ineligible_package!(c_partially_disabled_arch)).to be(false) }
+        .to not_to_output.to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "returns false for a cask disabled only on the current os" do
+      expect { expect(bump.skip_ineligible_package!(c_partially_disabled_os)).to be(false) }
         .to not_to_output.to_stdout
         .and not_to_output.to_stderr
     end

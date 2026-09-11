@@ -7,8 +7,8 @@ cask "with-depends-on-formula-multiple" do
   url "file://#{TEST_FIXTURE_DIR}/cask/caffeine.zip"
   homepage "https://brew.sh/with-depends-on-formula-multiple"
 
-  depends_on formula: "unar"
   depends_on formula: "fileutils"
+  depends_on formula: "unar"
 
   app "Caffeine.app"
 end

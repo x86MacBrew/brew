@@ -49,17 +49,6 @@ module OS
         end
       end
 
-      module FormulaeDependents
-        extend T::Helpers
-
-        requires_ancestor { ::Homebrew::TestBot::FormulaeDependents }
-
-        sig { params(_formula: Formula, args: ::Homebrew::Cmd::TestBotCmd::Args).returns(T::Boolean) }
-        def skip_recursive_dependents?(_formula, args:)
-          super || ::Hardware::CPU.intel?
-        end
-      end
-
       module CleanupBefore
         extend T::Helpers
 
@@ -88,5 +77,4 @@ end
 Homebrew::TestBot.singleton_class.prepend(OS::Mac::TestBot::ClassMethods)
 Homebrew::TestBot::TestFormulae.prepend(OS::Mac::TestBot::TestFormulae)
 Homebrew::TestBot::Formulae.prepend(OS::Mac::TestBot::Formulae)
-Homebrew::TestBot::FormulaeDependents.prepend(OS::Mac::TestBot::FormulaeDependents)
 Homebrew::TestBot::CleanupBefore.prepend(OS::Mac::TestBot::CleanupBefore)

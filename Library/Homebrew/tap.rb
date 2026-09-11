@@ -1334,7 +1334,10 @@ class Tap
     end
 
     autobump = autobump_packages.select do |_, p|
-      next if p["disabled"]
+      next if p["disabled"] && p["variations"].blank?
+      next if p["variations"].present? && p["variations"].each_value.all? do |variation|
+        variation.fetch("disabled", p["disabled"])
+      end
       next if p["skip_livecheck"]
 
       p["autobump"] == true

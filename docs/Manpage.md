@@ -1523,11 +1523,11 @@ or cask.
 
 : Only list leaves that were installed as dependencies.
 
-### `link`, `ln` \[*`options`*\] *`installed_formula`* \[...\]
+### `link`, `ln` \[*`options`*\] *`installed_formula`*\|*`installed_cask`* \[...\]
 
-Symlink all of *`formula`*'s installed files into Homebrew's prefix. This is
-done automatically when you install formulae but can be useful for manual
-installations.
+Symlink all of *`formula`*'s installed files or *`cask`*'s binaries, manpages
+and shell completions into Homebrew's prefix. This is done automatically when
+you install formulae and casks but can be useful for manual installations.
 
 `--overwrite`
 
@@ -1540,11 +1540,20 @@ installations.
 
 `-f`, `--force`
 
-: Allow keg-only formulae to be linked.
+: Allow keg-only formulae to be linked. When linking casks, overwrite existing
+  symlinks originally from the same cask.
 
 `--HEAD`
 
 : Link the HEAD version of the formula if it is installed.
+
+`--formula`
+
+: Treat all named arguments as formulae.
+
+`--cask`
+
+: Treat all named arguments as casks.
 
 ### `list`, `ls` \[*`options`*\] \[*`installed_formula`*\|*`installed_cask`* ...\]
 
@@ -2281,16 +2290,24 @@ Uninstall a *`formula`* or *`cask`*.
 
 : Treat all named arguments as casks.
 
-### `unlink` \[`--dry-run`\] *`installed_formula`* \[...\]
+### `unlink` \[*`options`*\] *`installed_formula`*\|*`installed_cask`* \[...\]
 
-Remove symlinks for *`formula`* from Homebrew's prefix. This can be useful for
-temporarily disabling a formula: `brew unlink` *`formula`* `&&` *`commands`* `&&
-brew link` *`formula`*
+Remove symlinks for *`formula`* or *`cask`* from Homebrew's prefix. This can be
+useful for temporarily disabling a formula: `brew unlink` *`formula`* `&&`
+*`commands`* `&& brew link` *`formula`*
 
 `-n`, `--dry-run`
 
 : List files which would be unlinked without actually unlinking or deleting any
   files.
+
+`--formula`
+
+: Treat all named arguments as formulae.
+
+`--cask`
+
+: Treat all named arguments as casks.
 
 ### `unpin` \[`--formula`\] \[`--cask`\] *`installed_formula`*\|*`installed_cask`* \[...\]
 
@@ -3750,7 +3767,9 @@ and Linux workers.
 
 `--build-dependents-from-source`
 
-: Build dependents from source rather than testing bottles.
+: Build a limited set of dependents from source in addition to testing bottles.
+  Up to 10 per formula per shard, prioritising popular dependents in a sharded
+  group.
 
 `--junit`
 

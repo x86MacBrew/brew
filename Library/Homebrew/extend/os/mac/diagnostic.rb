@@ -162,8 +162,8 @@ module OS
               You are using macOS #{version}.
               #{who} do not provide support for this #{what.chomp}
             EOS
-            remediation: macos_bottle_remediation(MacOS.version, intel: ::Hardware::CPU.intel?),
             tier:,
+            remediation: macos_bottle_remediation(MacOS.version, intel: ::Hardware::CPU.intel?),
           )
         end
 
@@ -286,7 +286,7 @@ module OS
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               The directory Xcode is reportedly installed to doesn't exist:
-              #{prefix}
+                #{prefix}
             EOS
             remediation: <<~EOS,
               You may need to `xcode-select` the proper path if you have moved Xcode.
@@ -302,17 +302,16 @@ module OS
 
           path = MacOS::Xcode.bundle_path
           path = "/Developer" if path.nil? || !path.directory?
-
+          commands = ["sudo xcode-select --switch #{path}"]
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               Your Xcode is configured with an invalid path.
             EOS
             remediation: ::Homebrew::Diagnostic::Finding::Remediation.new(
-              commands: ["sudo xcode-select --switch #{path}"],
-              text:     <<~EOS,
+              text:     append_indented_list(commands, <<~EOS),
                 You should change it to the correct path:
-                  sudo xcode-select --switch #{path}
               EOS
+              commands:,
             ),
           )
         end
@@ -324,16 +323,16 @@ module OS
           return unless Utils.popen_read_text("/usr/bin/xcrun", "--find", "clang", err: :out).include?("license")
           return if $CHILD_STATUS.success?
 
+          commands = ["sudo xcodebuild -license"]
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               You have not agreed to the Xcode license.
             EOS
             remediation: ::Homebrew::Diagnostic::Finding::Remediation.new(
-              commands: ["sudo xcodebuild -license"],
-              text:     <<~EOS,
+              text:     append_indented_list(commands, <<~EOS),
                 Agree to the license by opening Xcode.app or running:
-                  sudo xcodebuild -license
               EOS
+              commands:,
             ),
           )
         end
@@ -409,9 +408,8 @@ module OS
               These files can cause compilation and link failures, especially if they
               are compiled with improper architectures.
             EOS
-            remediation: <<~EOS,
+            remediation: append_indented_list(@found, <<~EOS),
               Consider removing these files:
-                #{@found.join("\n  ")}
             EOS
           )
         end
@@ -445,9 +443,8 @@ module OS
                 architectures. macOS itself never installs anything to /usr/local so
                 it was either installed by a user or some other third party software.
               EOS
-              remediation: <<~EOS,
-                tl;dr: delete these files:
-                  #{@found.join("\n")}
+              remediation: append_indented_list(@found, <<~EOS),
+                Consider removing these files:
               EOS
             )
           end

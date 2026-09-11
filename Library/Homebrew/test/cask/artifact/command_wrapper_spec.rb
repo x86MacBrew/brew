@@ -42,6 +42,14 @@ RSpec.describe Cask::Artifact::CommandWrapper, :cask do
     )
   end
 
+  it "lists the target in a dry run without writing the wrapper" do
+    expect do
+      artifact.install_phase(command: NeverSudoSystemCommand, force: false, dry_run: true)
+    end.to output("#{target}\n").to_stdout
+
+    expect(artifact.source).not_to exist
+  end
+
   it "serialises the wrapper definition" do
     expect(artifact.to_args).to eq([
       "example",

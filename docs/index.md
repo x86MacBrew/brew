@@ -82,6 +82,7 @@ Documentation is grouped below by audience: users, contributors, maintainers and
 - [Homebrew/homebrew-cask Maintainer Guide](Homebrew-homebrew-cask-Maintainer-Guide.md)
 
 - [BrewTestBot for Maintainers](BrewTestBot-For-Maintainers.md)
+- [Advisory Matching](Advisory-Matching.md)
 - [Common Issues for Maintainers](Common-Issues-for-Maintainers.md)
 - [Releases](Releases.md)
 

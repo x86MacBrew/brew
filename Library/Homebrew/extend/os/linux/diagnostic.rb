@@ -62,19 +62,19 @@ module OS
           end
           return if executable
 
+          commands = ["export HOMEBREW_TEMP=~/tmp",
+                      "echo 'export HOMEBREW_TEMP=~/tmp' >> #{Utils::Shell.profile}"]
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               The directory #{HOMEBREW_TEMP} does not permit executing
               programs. It is likely mounted as "noexec".
             EOS
             remediation: ::Homebrew::Diagnostic::Finding::Remediation.new(
-              commands: ["export HOMEBREW_TEMP=~/tmp", "echo 'export HOMEBREW_TEMP=~/tmp' >> #{Utils::Shell.profile}"],
-              text:     <<~EOS,
+              text:     append_indented_list(commands, <<~EOS),
                 Please set `$HOMEBREW_TEMP`
                 in your #{Utils::Shell.profile} to a different directory, for example:
-                  export HOMEBREW_TEMP=~/tmp
-                  echo 'export HOMEBREW_TEMP=~/tmp' >> #{Utils::Shell.profile}
               EOS
+              commands:,
             ),
           )
         end
@@ -83,17 +83,18 @@ module OS
         def check_umask_not_zero
           return unless File.umask.zero?
 
+          commands = ["echo 'umask 002' >> #{Utils::Shell.profile}"]
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               umask is currently set to 000. Directories created by Homebrew cannot
               be world-writable.
             EOS
             remediation: ::Homebrew::Diagnostic::Finding::Remediation.new(
-              text:     <<~EOS,
+              text:     append_indented_list(commands, <<~EOS),
                 This issue can be resolved by adding "umask 002" to
                 your #{Utils::Shell.profile}:
               EOS
-              commands: ["echo 'umask 002' >> #{Utils::Shell.profile}"],
+              commands:,
             ),
           )
         end
@@ -299,15 +300,14 @@ module OS
 
           return if badly_linked.empty?
 
-          remediation = ::Homebrew::Diagnostic::Finding::Remediation.new(
-            commands: ["brew reinstall #{badly_linked.join(" ")}"],
-          )
           ::Homebrew::Diagnostic::Finding.new(
             <<~EOS,
               Formulae which link to GCC through a versioned path were found. These formulae
               are prone to breaking when GCC is updated.
             EOS
-            remediation:,
+            remediation: ::Homebrew::Diagnostic::Finding::Remediation.new(
+              commands: ["brew reinstall #{badly_linked.join(" ")}"],
+            ),
           )
         end
 

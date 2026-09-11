@@ -1432,12 +1432,26 @@ RSpec.describe Tap do
       core_tap.remove_instance_variable(:@autobump) if core_tap.instance_variable_defined?(:@autobump)
       expect(Homebrew::API::Internal).not_to receive(:formula_hashes)
       allow(Homebrew::API::Formula).to receive(:all_formulae).and_return({
-        "autobumped" => { "autobump" => true, "skip_livecheck" => false },
-        "disabled"   => { "autobump" => true, "disabled" => true },
-        "skipped"    => { "autobump" => true, "skip_livecheck" => true },
+        "autobumped"         => { "autobump" => true, "skip_livecheck" => false },
+        "disabled"           => { "autobump" => true, "disabled" => true },
+        "partially-disabled" => {
+          "autobump"   => true, "disabled" => true,
+          "variations" => {
+            "arm64_tahoe"  => { "conflicts_with" => ["skipped"] },
+            "x86_64_linux" => { "disabled" => false },
+          }
+        },
+        "skipped"            => { "autobump" => true, "skip_livecheck" => true },
+        "variations"         => {
+          "autobump"   => true, "skip_livecheck" => false, "disabled" => false,
+          "variations" => {
+            "arm64_tahoe"  => { "dependencies" => ["autobumped"] },
+            "x86_64_linux" => { "dependencies" => ["skipped"] },
+          }
+        },
       })
 
-      expect(core_tap.autobump).to eq(["autobumped"])
+      expect(core_tap.autobump).to eq(["autobumped", "partially-disabled", "variations"])
     end
 
     specify "#autobump reads public cask API metadata" do
@@ -1446,12 +1460,27 @@ RSpec.describe Tap do
       expect(Homebrew::API::Formula).not_to receive(:all_formulae)
       expect(Homebrew::API::Internal).not_to receive(:cask_hashes)
       allow(Homebrew::API::Cask).to receive(:all_casks).and_return({
-        "autobumped" => { "autobump" => true, "skip_livecheck" => false },
-        "disabled"   => { "autobump" => true, "disabled" => true },
-        "skipped"    => { "autobump" => true, "skip_livecheck" => true },
+        "autobumped"         => { "autobump" => true, "skip_livecheck" => false },
+        "disabled"           => { "autobump" => true, "disabled" => true },
+        "partially-disabled" => {
+          "autobump"   => true, "disabled" => true,
+          "variations" => {
+            "tahoe"        => { "conflicts_with" => ["skipped"] },
+            "x86_64_linux" => { "disabled" => false },
+          }
+        },
+        "skipped"            => { "autobump" => true, "skip_livecheck" => true },
+        "variations"         => {
+          "autobump"   => true, "skip_livecheck" => false, "disabled" => false,
+          "url"        => "https://brew.sh/aarch64.dmg", "sha256" => "abc",
+          "variations" => {
+            "tahoe"        => { "url" => "https://brew.sh/x86_64.dmg", "sha256" => "def" },
+            "x86_64_linux" => { "sha256" => nil },
+          }
+        },
       })
 
-      expect(cask_tap.autobump).to eq(["autobumped"])
+      expect(cask_tap.autobump).to eq(["autobumped", "partially-disabled", "variations"])
     end
 
     specify "files", :no_api do

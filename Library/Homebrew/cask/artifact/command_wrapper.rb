@@ -65,19 +65,24 @@ module Cask
 
       sig {
         override.params(
-          force:   T::Boolean,
-          adopt:   T::Boolean,
-          command: T.class_of(SystemCommand),
-          options: T.anything,
+          force:     T::Boolean,
+          adopt:     T::Boolean,
+          overwrite: T::Boolean,
+          dry_run:   T::Boolean,
+          command:   T.class_of(SystemCommand),
+          options:   T.anything,
         ).void
       }
-      def install_phase(force: false, adopt: false, command: SystemCommand, **options)
-        if (content = @content)
-          source.dirname.mkpath
-          source.write(content)
-        elsif (executable = @executable)
-          args = @args.map { |arg| Shellwords.shellescape(arg) }
-          source.write_env_script(executable, args, @env)
+      def install_phase(force: false, adopt: false, overwrite: false, dry_run: false, command: SystemCommand,
+                        **options)
+        unless dry_run
+          if (content = @content)
+            source.dirname.mkpath
+            source.write(content)
+          elsif (executable = @executable)
+            args = @args.map { |arg| Shellwords.shellescape(arg) }
+            source.write_env_script(executable, args, @env)
+          end
         end
         super
       end

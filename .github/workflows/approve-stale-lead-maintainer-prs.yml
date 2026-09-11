@@ -16,9 +16,6 @@ on:
 
 permissions: {}
 
-env:
-  HOMEBREW_DEVELOPER: 1
-
 defaults:
   run:
     shell: bash -euo pipefail {0}
@@ -34,12 +31,21 @@ jobs:
       pull-requests: write
       statuses: read
     env:
-      HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.inputs.pull_request || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Set up Ruby
+        uses: Homebrew/actions/setup-ruby@f8d4222eb633e65c2a0157383cf80861fc7fae7f # 2026.09.07.1
+        with:
+          setup-homebrew: true
+          portable-ruby: true
+          working-directory: Library/Homebrew
+
       - name: Evaluate stale lead maintainer PRs
-        run: ./bin/brew ruby -- .github/scripts/approve_stale_lead_maintainer_prs.rb
+        run: bundle exec ruby .github/scripts/approve_stale_lead_maintainer_prs.rb
+        env:
+          BUNDLE_GEMFILE: Library/Homebrew/Gemfile

@@ -31,22 +31,6 @@ module OS
         end
       end
 
-      module FormulaeDependents
-        extend T::Helpers
-
-        requires_ancestor { ::Homebrew::TestBot::FormulaeDependents }
-
-        sig { params(formula: Formula, args: ::Homebrew::Cmd::TestBotCmd::Args).returns(T::Boolean) }
-        def skip_recursive_dependents?(formula, args:)
-          super || formula.requirements.exclude?(LinuxRequirement.new)
-        end
-
-        sig { params(dependent: Formula).returns(T::Boolean) }
-        def build_dependent_from_source?(dependent)
-          dependent.requirements.include?(LinuxRequirement.new)
-        end
-      end
-
       module CleanupBefore
         extend T::Helpers
 
@@ -67,5 +51,4 @@ end
 
 Homebrew::TestBot.singleton_class.prepend(OS::Linux::TestBot::ClassMethods)
 Homebrew::TestBot::TestFormulae.prepend(OS::Linux::TestBot::TestFormulae)
-Homebrew::TestBot::FormulaeDependents.prepend(OS::Linux::TestBot::FormulaeDependents)
 Homebrew::TestBot::CleanupBefore.prepend(OS::Linux::TestBot::CleanupBefore)
