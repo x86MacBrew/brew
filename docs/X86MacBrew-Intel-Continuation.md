@@ -1,4 +1,4 @@
-# x86MacBrew Intel client continuation
+# X86MacBrew Intel Client Continuation
 
 This branch is part of **x86MacBrew**, an independent community project that
 continues Homebrew-compatible developer tooling for Intel Macs. It is not
@@ -7,7 +7,7 @@ maintained by, endorsed by, or an official release of Homebrew.
 The goal is to retain familiar `brew` commands and workflows while maintaining
 only the Intel compatibility boundaries that upstream no longer supports.
 This repository remains a fork of `Homebrew/brew` and keeps changes small,
-reviewable, and attributable to their upstream base.
+reviewable and attributable to their upstream base.
 
 ## Tested baseline
 
@@ -82,7 +82,7 @@ When a supported formula exists, the baseline also needs a source install,
 formula test, and runtime smoke test. Bottle releases add a separate clean-host
 installation requirement.
 
-## Manual Intel builder workflow
+## Manual builder workflow
 
 `.github/workflows/x86macbrew-intel-baseline.yml` is intentionally manual. It
 runs only on a dedicated runner labelled `self-hosted`, `macos`, `x86_64`, and
