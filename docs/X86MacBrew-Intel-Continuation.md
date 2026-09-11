@@ -25,8 +25,10 @@ On 2026-09-11, a fresh isolated checkout of this client successfully ran:
 
 ```sh
 brew config
+brew update
 brew tap x86MacBrew/x86Mac
 brew install x86MacBrew/x86Mac/x86macbrew-doctor
+brew upgrade x86MacBrew/x86Mac/x86macbrew-doctor
 x86macbrew-doctor --json
 ```
 
@@ -36,6 +38,19 @@ baseline.
 
 This is a compatibility baseline, not a promise that every formula, cask, or
 future macOS version is supported.
+
+## Default branch is part of the update contract
+
+Homebrew's updater follows `refs/remotes/origin/HEAD`, which GitHub sets from
+the repository's default branch. Therefore, once this baseline has been
+reviewed and merged, the `x86MacBrew/brew` GitHub default branch **must** be
+`x86macbrew-intel-2027`, not `main`.
+
+`main` remains the reviewed upstream-tracking branch. Making it the GitHub
+default would cause a normal `brew update` in a cloned Intel client to check
+out `main` and abandon the maintained Intel branch. A disposable public-clone
+test on 2026-09-11 verified that setting `origin/HEAD` to the maintained branch
+preserves that branch across `brew update`.
 
 ## Branch roles
 
