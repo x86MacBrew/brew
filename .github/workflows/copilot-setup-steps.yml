@@ -9,6 +9,10 @@ on:
 jobs:
   # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
   copilot-setup-steps:
+    # This upstream-only environment provisions Homebrew's Copilot coding-agent
+    # toolchain. x86MacBrew validates its Intel continuation with its dedicated
+    # manual Intel baseline workflow instead.
+    if: github.repository_owner == 'Homebrew'
     runs-on: ubuntu-latest
 
     permissions:
