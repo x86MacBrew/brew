@@ -22,6 +22,11 @@ defaults:
 
 jobs:
   determine-runners:
+    # Homebrew's hosted runner matrix covers Apple Silicon macOS versions. It
+    # does not exercise this fork's Intel continuation path and can remain
+    # queued indefinitely in a fork. x86MacBrew validates Intel manually on a
+    # protected self-hosted builder instead.
+    if: github.repository_owner == 'Homebrew'
     runs-on: ubuntu-latest
     outputs:
       runners: ${{ steps.determine-runners.outputs.runners }}
@@ -41,6 +46,7 @@ jobs:
 
   tests:
     needs: determine-runners
+    if: needs.determine-runners.result == 'success'
     strategy:
       matrix:
         include: ${{ fromJson(needs.determine-runners.outputs.runners) }}
