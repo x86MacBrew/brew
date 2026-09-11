@@ -67,6 +67,17 @@ When a supported formula exists, the baseline also needs a source install,
 formula test, and runtime smoke test. Bottle releases add a separate clean-host
 installation requirement.
 
+## Manual Intel builder workflow
+
+`.github/workflows/x86macbrew-intel-baseline.yml` is intentionally manual. It
+runs only on a dedicated runner labelled `self-hosted`, `macos`, `x86_64`, and
+`x86macbrew-builder`, then captures `brew config` and the doctor JSON result as
+workflow artifacts.
+
+Do not add a `pull_request` trigger to this workflow. A self-hosted Intel
+builder is a release-adjacent machine, so only a maintainer should dispatch a
+reviewed client revision onto it.
+
 ## Support boundary
 
 x86MacBrew currently distributes a diagnostic tool from its stable tap and

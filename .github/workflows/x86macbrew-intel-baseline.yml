@@ -1,0 +1,58 @@
+name: x86MacBrew Intel baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  intel-baseline:
+    # This job is manual-only. Do not run pull-request code on a self-hosted
+    # Intel builder that may later create trusted release artifacts.
+    runs-on: [self-hosted, macos, x86_64, x86macbrew-builder]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the requested client revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify the Intel builder contract
+        run: |
+          test "$(uname -m)" = "x86_64"
+          sw_vers
+          xcode-select -p
+          clang --version
+
+      - name: Record client configuration
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_ENV_HINTS: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: bin/brew config | tee "$RUNNER_TEMP/brew-config.txt"
+
+      - name: Install and run the stable x86MacBrew diagnostic
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_ENV_HINTS: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          bin/brew tap x86MacBrew/x86Mac
+          bin/brew uninstall --force x86macbrew/x86mac/x86macbrew-doctor || true
+          bin/brew install --build-from-source x86macbrew/x86mac/x86macbrew-doctor
+          bin/x86macbrew-doctor --version
+          bin/x86macbrew-doctor --json | tee "$RUNNER_TEMP/x86macbrew-doctor.json"
+
+      - name: Upload baseline evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: x86macbrew-intel-baseline-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/brew-config.txt
+            ${{ runner.temp }}/x86macbrew-doctor.json
+          if-no-files-found: warn
+          retention-days: 90
