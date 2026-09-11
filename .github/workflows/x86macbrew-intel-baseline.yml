@@ -27,6 +27,12 @@ jobs:
           xcode-select -p
           clang --version
 
+      - name: Verify the maintained client is the fork default
+        run: |
+          git remote set-head origin --auto
+          test "$(git symbolic-ref --short refs/remotes/origin/HEAD)" = \
+            "origin/x86macbrew-intel-2027"
+
       - name: Record client configuration
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
