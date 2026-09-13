@@ -80,9 +80,11 @@ module OS
           args:                  T.any(String, ::Pathname),
           passthrough_stdin:     T::Boolean,
           child_message_handler: T.nilable(T.proc.params(message: String).returns(T.nilable(String))),
+          retain_tmp:            T::Boolean,
+          debug:                 T::Boolean,
         ).void
       }
-      def run(*args, passthrough_stdin: true, child_message_handler: nil)
+      def run(*args, passthrough_stdin: true, child_message_handler: nil, retain_tmp: false, debug: false)
         landlock.run { super }
       end
 

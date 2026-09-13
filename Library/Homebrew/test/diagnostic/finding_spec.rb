@@ -98,7 +98,7 @@ RSpec.describe Homebrew::Diagnostic::Finding do
 
     it "describes unsupported configurations" do
       message = described_class.support_tier_message(tier: :unsupported)
-      expect(message).to include("This is a Unsupported configuration:")
+      expect(message).to include("This is an Unsupported configuration:")
         .and include("https://docs.brew.sh/Support-Tiers#unsupported")
     end
 

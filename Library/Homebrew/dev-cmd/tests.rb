@@ -187,13 +187,6 @@ module Homebrew
 
           ENV["HOMEBREW_DEBUG"] = "1" if args.debug? # Used in spec_helper.rb to require the "debug" gem.
 
-          # Workaround for:
-          #
-          # ```
-          # ruby: no -r allowed while running setuid (SecurityError)
-          # ```
-          Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
-
           test_prof = "#{HOMEBREW_LIBRARY_PATH}/tmp/test_prof"
           if args.stackprof?
             ENV["TEST_STACK_PROF"] = "1"

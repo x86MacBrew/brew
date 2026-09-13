@@ -59,9 +59,9 @@ module RuboCop
         end
 
         # Prefer ftpmirror.gnu.org as suggested by https://www.gnu.org/prep/ftp.en.html
-        gnu_pattern = %r{^(?:https?|ftp)://ftp\.gnu\.org/(.*)}
+        gnu_pattern = %r{^(?:https?|ftp)://ftp\.gnu\.org/(?:gnu/)?(.*)}
         audit_urls(urls, gnu_pattern) do |match, url|
-          problem "#{url} should be: https://ftpmirror.gnu.org/gnu/#{match[1]}"
+          problem "#{url} should be: https://ftpmirror.gnu.org/#{match[1]}"
         end
 
         # Fossies upstream requests they aren't used as primary URLs

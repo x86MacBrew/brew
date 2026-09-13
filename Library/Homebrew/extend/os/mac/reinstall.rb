@@ -29,7 +29,8 @@ module OS
           context = build_install_context(pkgconf, flags: [])
 
           begin
-            Homebrew::Install.fetch_formulae([context.formula_installer])
+            return if Homebrew::Install.fetch_formulae([context.formula_installer]).empty?
+
             reinstall_formula(context)
             ohai "Reinstalled pkgconf due to macOS version mismatch"
           rescue

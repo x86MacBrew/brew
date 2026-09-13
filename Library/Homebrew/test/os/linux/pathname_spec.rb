@@ -8,6 +8,7 @@ RSpec.describe Pathname do
   let(:sho) { ELFPathname.wrap(elf_dir/"libforty.so.0") }
   let(:sho_without_runpath_rpath) { ELFPathname.wrap(elf_dir/"libhello.so.0") }
   let(:exec) { ELFPathname.wrap(elf_dir/"hello_with_rpath") }
+  let(:static_pie) { ELFPathname.wrap(elf_dir/"static_pie") }
 
   def patch_elfs
     mktmpdir do |tmp_dir|
@@ -22,6 +23,20 @@ RSpec.describe Pathname do
     it "returns interpreter" do
       expect(exec.interpreter).to eq "/lib64/ld-linux-x86-64.so.2"
       expect(sho.interpreter).to be_nil
+    end
+  end
+
+  describe "#pie?" do
+    context "with a static position-independent executable" do
+      it "is true" do
+        expect(static_pie.pie?).to be true
+      end
+    end
+
+    context "with an executable that lacks the flag" do
+      it "is false" do
+        expect(exec.pie?).to be false
+      end
     end
   end
 

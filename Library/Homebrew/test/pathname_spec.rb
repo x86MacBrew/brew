@@ -257,7 +257,7 @@ RSpec.describe Pathname do
     end
 
     it "supports renaming multiple files" do
-      dst.install(src/"a.txt" => "c.txt", src/"b.txt" => "d.txt")
+      dst.install(src/"a.txt" => "c.txt", src/"b.txt" => Pathname("d.txt"))
 
       expect(dst/"c.txt").to exist, "c.txt was not installed"
       expect(dst/"d.txt").to exist, "d.txt was not installed"
@@ -290,8 +290,9 @@ RSpec.describe Pathname do
     end
 
     it "can install relative paths as symlinks" do
-      dst.install_symlink "foo" => "bar"
+      dst.install_symlink "foo" => Pathname("bar"), "baz" => "qux"
       expect((dst/"bar").readlink).to eq(described_class.new("foo"))
+      expect((dst/"qux").readlink).to eq(described_class.new("baz"))
     end
 
     it "can install relative symlinks in a symlinked directory" do

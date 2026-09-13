@@ -111,6 +111,17 @@ RSpec.describe Homebrew::Services::System do
     end
   end
 
+  describe "#candidate_domain_targets" do
+    it "tries the user domain first when running through sudo" do
+      ENV.delete("HOMEBREW_SSH_TTY")
+      ENV["HOMEBREW_SUDO_USER"] = "test"
+      ENV["HOMEBREW_SERVICES_NO_DOMAIN_WARNING"] = "1"
+      allow(described_class).to receive(:root?).and_return(false)
+
+      expect(described_class.candidate_domain_targets).to eq(["user/#{Process.uid}", "gui/#{Process.uid}"])
+    end
+  end
+
   describe "#boot_path" do
     it "macOS - returns the boot path" do
       allow(described_class).to receive(:launchctl?).and_return(true)

@@ -112,13 +112,7 @@ module Homebrew
 
       sig { params(args: String).void }
       def run_bundle(*args)
-        Process.wait(fork do
-          # Native build scripts fail if EUID != UID
-          Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
-          exec "bundle", *args
-        end)
-
-        raise ErrorDuringExecution.new(["bundle", *args], status: $CHILD_STATUS) unless $CHILD_STATUS.success?
+        SystemCommand.safe_system "bundle", *args
       end
     end
   end

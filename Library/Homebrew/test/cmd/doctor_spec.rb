@@ -19,6 +19,25 @@ RSpec.describe Homebrew::Cmd::Doctor do
       .to output(/"tier": 1/).to_stdout
   end
 
+  [
+    [[], 1],
+    [[1, 2, 3, 2], 3],
+    [[3, :unsupported, 2], :unsupported],
+  ].each do |tiers, expected_tier|
+    specify "reports one support tier for #{tiers.inspect}" do
+      T.bind(self, RSpec::Core::ExampleGroup)
+
+      checks = Homebrew::Diagnostic::Checks.new
+      allow(Homebrew::Diagnostic::Checks).to receive(:new).and_return(checks)
+      allow(checks).to receive(:check_access_directories).and_return(
+        tiers.map { |tier| Homebrew::Diagnostic::Finding.new("Configuration warning", tier:) },
+      )
+
+      expect { described_class.new(["check_access_directories", "--json"]).run }
+        .to output(/"tier": #{expected_tier.to_json}/).to_stdout
+    end
+  end
+
   specify "check_missing_deps reports formula and cask dependencies", :cask do
     formula = instance_double(Formula, full_name:            "needs-foo",
                                        missing_dependencies: [instance_double(Dependency, to_s: "foo")])

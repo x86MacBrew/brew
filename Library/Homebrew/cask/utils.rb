@@ -92,8 +92,8 @@ module Cask
       ).void
     }
     def self.gain_permissions(path, command_args, command, &_block)
-      tried_permissions = false
-      tried_ownership = false
+      tried_permissions = T.let(false, T::Boolean)
+      tried_ownership = T.let(false, T::Boolean)
       begin
         yield path
       rescue
@@ -117,10 +117,9 @@ module Cask
           retry # rmtree
         end
 
-        unless tried_ownership
-          # in case of ownership problems
-          # TODO: Further examine files to see if ownership is the problem
-          #       before using `sudo` and `chown`.
+        # in case of ownership problems
+        recursive = command_args.include?("-R")
+        if !tried_ownership && ownership_problem?(path, recursive:)
           ohai "Using sudo to gain ownership of path '#{path}'"
           command.run("chown",
                       args: command_args + ["--", User.current.to_s, path],
@@ -133,6 +132,23 @@ module Cask
 
         raise
       end
+    end
+
+    # Whether `sudo chown` could plausibly fix the failure we just rescued: the
+    # `chflags`/`chmod` above run without `sudo`, so they only fail on paths we
+    # do not own. `lstat` rather than `owned?`, which would follow a symlink.
+    sig { params(path: Pathname, recursive: T::Boolean).returns(T::Boolean) }
+    def self.ownership_problem?(path, recursive:)
+      return false if Process.euid.zero?
+
+      paths = recursive ? path.find : [path]
+      paths.any? do |candidate|
+        candidate.lstat.uid != Process.euid
+      rescue SystemCallError
+        false
+      end
+    rescue SystemCallError
+      false
     end
 
     sig { params(path: Pathname).returns(T::Boolean) }

@@ -30,10 +30,9 @@ module Cask
           command.run!(
             executable_path,
             **args,
-            env:       { "PATH" => PATH.new(
+            env: { "PATH" => PATH.new(
               HOMEBREW_PREFIX/"bin", HOMEBREW_PREFIX/"sbin", ENV.fetch("PATH")
             ) },
-            reset_uid: !args[:sudo],
           )
         end
       end

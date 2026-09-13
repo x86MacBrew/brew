@@ -1,6 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "io/console"
 require "utils/popen"
 
 # Various helper functions for interacting with TTYs.
@@ -141,9 +142,9 @@ module Tty
     def size
       return @size if defined?(@size)
 
-      height, width = Utils.popen_read_text("/bin/stty", "size", err: File::NULL).presence&.split&.map(&:to_i)
-      size = [height, width] if height && width
-      @size = T.let(size, T.nilable([Integer, Integer]))
+      @size = T.let(($stdin.winsize if $stdin.tty?), T.nilable([Integer, Integer]))
+    rescue IOError, SystemCallError
+      @size = nil
     end
 
     sig { returns(Integer) }

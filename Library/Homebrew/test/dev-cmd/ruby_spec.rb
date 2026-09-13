@@ -17,6 +17,7 @@ RSpec.describe Homebrew::DevCmd::Ruby do
       end
 
       abort if T::Utils.signature_for_method(SorbetRuntimeTest.instance_method(:check))
+      abort if ENV.key?("BUNDLER_VERSION")
     RUBY
     env = {
       "HOMEBREW_DEV_CMD_RUN"             => "1",

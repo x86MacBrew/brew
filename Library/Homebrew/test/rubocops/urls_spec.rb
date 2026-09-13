@@ -8,9 +8,9 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Urls do
 
   let(:offense_list) do
     [{
-      "url" => "https://ftp.gnu.org/lightning/lightning-2.1.0.tar.gz",
-      "msg" => "https://ftp.gnu.org/lightning/lightning-2.1.0.tar.gz should be: " \
-               "https://ftpmirror.gnu.org/gnu/lightning/lightning-2.1.0.tar.gz",
+      "url" => "https://ftp.gnu.org/gnu/lightning/lightning-2.1.0.tar.gz",
+      "msg" => "https://ftp.gnu.org/gnu/lightning/lightning-2.1.0.tar.gz should be: " \
+               "https://ftpmirror.gnu.org/lightning/lightning-2.1.0.tar.gz",
       "col" => 2,
     }, {
       "url" => "https://fossies.org/linux/privat/monit-5.23.0.tar.gz",

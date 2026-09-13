@@ -215,6 +215,51 @@ RSpec.describe Cask::DSL, :cask, :no_api do
       expect(cask.autobump?).to be(true)
     end
 
+    it "rejects the disabled reason in a current cask" do
+      expect do
+        Cask::Cask.new("test-cask") do
+          no_autobump! because: :requires_manual_review
+        end
+      end.to raise_error(ArgumentError, /'because' argument/)
+    end
+
+    it "loads the disabled reason from installed cask metadata" do
+      caskfile = mktmpdir/"test-cask.rb"
+      caskfile.dirname.mkpath
+      caskfile.write <<~RUBY
+        cask "test-cask" do
+          no_autobump! because: :requires_manual_review
+        end
+      RUBY
+
+      expect(Cask::CaskLoader::FromInstalledPathLoader.new(caskfile).load(config: nil).no_autobump_message)
+        .to eq(:requires_manual_review)
+    end
+
+    it "rejects an unknown reason in a current cached cask" do
+      caskfile = Cask::Cache.path/"test-cask.rb"
+      caskfile.dirname.mkpath
+      caskfile.write <<~RUBY
+        cask "test-cask" do
+          no_autobump! because: :unknown_reason
+        end
+      RUBY
+
+      expect { Cask::CaskLoader.load(caskfile) }.to raise_error(Cask::CaskUnreadableError, /'because' argument/)
+    end
+
+    it "rejects the removed reason in a current cask loaded from a URI", :needs_utils_curl do
+      caskfile = mktmpdir/"test-cask.rb"
+      caskfile.write <<~RUBY
+        cask "test-cask" do
+          no_autobump! because: :requires_manual_review
+        end
+      RUBY
+
+      expect { Cask::CaskLoader.load("file://#{caskfile}") }
+        .to raise_error(Cask::CaskUnreadableError, /'because' argument/)
+    end
+
     context "when no_autobump! is set" do
       let(:cask) do
         Cask::Cask.new("checksum-cask") do

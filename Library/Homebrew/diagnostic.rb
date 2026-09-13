@@ -24,19 +24,33 @@ module Homebrew
   module Diagnostic
     extend Utils::Output::Mixin
 
+    sig { returns(T::Array[T.any(Integer, Symbol)]) }
+    def self.support_tiers
+      @support_tiers ||= T.let([], T.nilable(T::Array[T.any(Integer, Symbol)]))
+    end
+
+    sig { void }
+    def self.report_support_tier
+      message = Finding.support_tier_message(tier: Finding.support_tier(support_tiers))
+      support_tiers.clear
+      $stderr.puts "\n", message if message
+    end
+
+    at_exit { Homebrew::Diagnostic.report_support_tier }
+
     sig { params(type: Symbol, fatal: T::Boolean).void }
     def self.checks(type, fatal: true)
-      @checks ||= T.let(Checks.new, T.nilable(Checks))
+      checks = Checks.new
       failed = T.let(false, T::Boolean)
-      @checks.public_send(type).each do |check|
-        out = @checks.public_send(check)
-        next if out.nil?
-
-        if fatal
-          failed ||= true
-          ofail out.to_s
-        else
-          opoo out.to_s
+      checks.public_send(type).each do |check|
+        Array(checks.public_send(check)).each do |finding|
+          support_tiers << finding.tier
+          if fatal
+            failed = true
+            ofail finding.to_s
+          else
+            opoo finding.to_s
+          end
         end
       end
       exit 1 if failed && fatal
@@ -137,7 +151,10 @@ module Homebrew
 
       sig { returns(T::Array[String]) }
       def supported_configuration_checks
-        [].freeze
+        %w[
+          check_homebrew_prefix
+          check_for_nix_homebrew
+        ].freeze
       end
 
       sig { returns(T::Array[String]) }
@@ -503,12 +520,27 @@ module Homebrew
       end
 
       sig { returns(T.nilable(Finding)) }
+      def check_brew_path
+        brew = which("brew", paths)
+        return if brew.nil? || File.identical?(brew, HOMEBREW_BREW_FILE)
+
+        Finding.new(
+          <<~EOS,
+            Another `brew` shadows this Homebrew installation in your PATH:
+              #{brew}
+
+            This may be a helper, wrapper or another Homebrew installation.
+          EOS
+          remediation: path_remediation,
+        )
+      end
+
+      sig { returns(T.nilable(Finding)) }
       def check_user_path_1
         @seen_prefix_bin = false
         @seen_prefix_sbin = false
 
         message = ""
-        remediation = T.let(nil, T.nilable(Finding::Remediation))
 
         paths.each do |p|
           case p
@@ -528,15 +560,6 @@ module Homebrew
 
                   The following tools exist at both paths:
                 EOS
-                prepend_path = Utils::Shell.prepend_path_in_profile("#{HOMEBREW_PREFIX}/bin")
-                remediation = Finding::Remediation.new(
-                  text:     <<~EOS,
-                    Consider setting your PATH so that
-                    #{HOMEBREW_PREFIX}/bin occurs before /usr/bin. Here is a one-liner:
-                      #{prepend_path}
-                  EOS
-                  commands: [prepend_path].compact,
-                )
               end
             end
           when "#{HOMEBREW_PREFIX}/bin"
@@ -547,7 +570,7 @@ module Homebrew
         end
 
         @user_path_1_done = true
-        Finding.new(message, remediation:) if message.present?
+        Finding.new(message, remediation: path_remediation) if message.present?
       end
 
       sig { returns(T.nilable(Finding)) }
@@ -555,18 +578,11 @@ module Homebrew
         check_user_path_1 unless @user_path_1_done
         return if @seen_prefix_bin
 
-        prepend_path = Utils::Shell.prepend_path_in_profile("#{HOMEBREW_PREFIX}/bin")
         Finding.new(
           <<~EOS,
             Homebrew's "bin" was not found in your PATH.
           EOS
-          remediation: Finding::Remediation.new(
-            text:     <<~EOS,
-              Consider setting your PATH for example like so:
-                #{prepend_path}
-            EOS
-            commands: [prepend_path].compact,
-          ),
+          remediation: path_remediation,
         )
       end
 
@@ -581,19 +597,12 @@ module Homebrew
         return if sbin.children.empty?
         return if sbin.children.one? && sbin.children.first.basename.to_s == ".keepme"
 
-        prepend_path = Utils::Shell.prepend_path_in_profile("#{HOMEBREW_PREFIX}/sbin")
         Finding.new(
           <<~EOS,
             Homebrew's "sbin" was not found in your PATH but you have installed
             formulae that put executables in #{HOMEBREW_PREFIX}/sbin.
           EOS
-          remediation: Finding::Remediation.new(
-            text:     <<~EOS,
-              Consider setting your PATH for example like so:
-                #{prepend_path}
-            EOS
-            commands: [prepend_path].compact,
-          ),
+          remediation: path_remediation(sbin.to_s),
         )
       end
 
@@ -1234,6 +1243,7 @@ module Homebrew
       sig { returns(T.nilable(Finding)) }
       def check_homebrew_prefix
         return if Homebrew.default_prefix?
+        return if ENV["HOMEBREW_INTEGRATION_TEST"]
 
         Finding.new(
           <<~EOS,
@@ -1624,6 +1634,18 @@ module Homebrew
       end
 
       private
+
+      sig { params(path: String).returns(Finding::Remediation) }
+      def path_remediation(path = "#{HOMEBREW_PREFIX}/bin")
+        prepend_path = Utils::Shell.prepend_path_in_profile(path)
+        Finding::Remediation.new(
+          text:     <<~EOS,
+            Consider setting your PATH for example like so:
+              #{prepend_path}
+          EOS
+          commands: [prepend_path].compact,
+        )
+      end
 
       sig { returns(T::Array[String]) }
       def paths

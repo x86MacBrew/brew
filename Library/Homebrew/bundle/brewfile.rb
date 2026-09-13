@@ -24,9 +24,7 @@ module Homebrew
           else
             raise "'HOMEBREW_BUNDLE_FILE' cannot be specified with '--global'" if env_bundle_file.present?
 
-            home_brewfile = Bundle.exchange_uid_if_needed! do
-              "#{Dir.home}/.Brewfile"
-            end
+            home_brewfile = "#{Dir.home}/.Brewfile"
             user_config_home_brewfile = "#{user_config_home}/Brewfile"
 
             if user_config_home.present? && Dir.exist?(user_config_home) &&

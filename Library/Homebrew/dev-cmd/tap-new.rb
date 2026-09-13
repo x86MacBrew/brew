@@ -5,7 +5,6 @@ require "abstract_command"
 require "fileutils"
 require "system_command"
 require "tap"
-require "utils/uid"
 
 module Homebrew
   module DevCmd
@@ -97,29 +96,15 @@ module Homebrew
         write_path(tap, ".github/workflows/autobump.yml", autobump_yml)
 
         unless args.no_git?
-          cd tap.path do |path|
+          cd tap.path do
             Utils::Git.set_name_email!
             Utils::Git.setup_gpg!
 
             SystemCommand.safe_system "git", "init", "--initial-branch=#{branch}"
 
-            args = []
-            git_owner = File.stat(File.join(path, ".git")).uid
-            if git_owner != Process.uid && git_owner == Process.euid
-              # Under Homebrew user model, EUID is permitted to execute commands under the UID.
-              # Root users are never allowed (see brew.sh).
-              args << "-c" << "safe.directory=#{path}"
-            end
-
-            # Use the configuration of the original user, which will have author information and signing keys.
-            env = { "HOME" => Utils::UID.uid_home }.compact
-            env["TMPDIR"] = nil if (tmpdir = ENV.fetch("TMPDIR", nil)) && !File.writable_real?(tmpdir)
-            system_command!("git", args: [*args, "add", "--all"], env:,
-                            print_stdout: true, run_as_real_uid: true)
-            system_command!("git", args: [*args, "commit", "-m", "Create #{tap} tap"], env:,
-                            print_stdout: true, run_as_real_uid: true)
-            system_command!("git", args: [*args, "branch", "-m", branch], env:,
-                            print_stdout: true, run_as_real_uid: true)
+            system_command!("git", args: ["add", "--all"], print_stdout: true)
+            system_command!("git", args: ["commit", "-m", "Create #{tap} tap"], print_stdout: true)
+            system_command!("git", args: ["branch", "-m", branch], print_stdout: true)
           end
         end
 

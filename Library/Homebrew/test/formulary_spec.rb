@@ -275,6 +275,95 @@ RSpec.describe Formulary do
         end
       end
 
+      context "with a disabled no_autobump! reason" do
+        before do
+          stub_const("HOMEBREW_CACHE_FORMULA", HOMEBREW_CACHE/"Formula")
+        end
+
+        let(:formula_content) do
+          super().sub("\n", "\n  no_autobump! because: :requires_manual_review\n")
+        end
+
+        it "rejects the reason in a current formula" do
+          expect { described_class.factory(formula_name) }
+            .to raise_error(TapFormulaUnreadableError, /'because' argument/)
+        end
+
+        it "rejects the reason in a cached current formula" do
+          cached_formula = HOMEBREW_CACHE_FORMULA/"#{formula_name}.rb"
+          cached_formula.dirname.mkpath
+          cached_formula.write(formula_content)
+
+          expect do
+            described_class.factory(cached_formula)
+          end.to raise_error(FormulaUnreadableError, /'because' argument/)
+        end
+
+        it "rejects the reason through the cached-name loader" do
+          cached_formula = HOMEBREW_CACHE_FORMULA/"#{formula_name}.rb"
+          cached_formula.dirname.mkpath
+          cached_formula.write(formula_content)
+
+          expect { described_class::FromCacheLoader.new(formula_name, cached_formula).get_formula(:stable) }
+            .to raise_error(FormulaUnreadableError, /'because' argument/)
+        end
+
+        it "rejects the reason in a current formula loaded from a URI", :needs_utils_curl do
+          expect { described_class.factory("file://#{formula_path}") }
+            .to raise_error(FormulaUnreadableError, /'because' argument/)
+        end
+
+        it "rejects the reason in a current formula loaded while evaluating metadata" do
+          expect do
+            described_class.from_contents("legacy", mktmpdir/".brew/legacy.rb", <<~RUBY, from_metadata: true)
+              class Legacy < Formula
+                Formulary.factory(#{formula_path.to_s.inspect})
+                url "https://brew.sh/legacy-1.0.tar.gz"
+              end
+            RUBY
+          end.to raise_error(FormulaUnreadableError, /'because' argument/)
+        end
+
+        it "loads the reason from a bottle" do
+          allow(Utils::Bottles).to receive(:formula_contents).with(bottle.realpath, name: formula_name)
+                                                             .and_return(formula_content)
+
+          expect(described_class.factory(bottle).no_autobump_message).to eq(:requires_manual_review)
+        end
+
+        it "loads the reason from a keg formula path for post-install hooks" do
+          keg_formula = HOMEBREW_CELLAR/formula_name/"0.1/.brew/#{formula_name}.rb"
+          keg_formula.dirname.mkpath
+          keg_formula.write(formula_content)
+
+          expect(described_class.factory(keg_formula).no_autobump_message).to eq(:requires_manual_review)
+        end
+
+        it "rejects the reason in a current formula under a .brew directory" do
+          current_formula = mktmpdir/".brew/#{formula_name}.rb"
+          current_formula.dirname.mkpath
+          current_formula.write(formula_content)
+
+          expect { described_class.factory(current_formula) }
+            .to raise_error(FormulaUnreadableError, /'because' argument/)
+        end
+
+        it "loads the reason from an installed keg after the formula is removed" do
+          keg_path = HOMEBREW_CELLAR/formula_name/"0.1"
+          (keg_path/".brew/#{formula_name}.rb").tap do |keg_formula|
+            keg_formula.dirname.mkpath
+            keg_formula.write(formula_content)
+          end
+          tab = Tab.empty
+          tab.tabfile = keg_path/AbstractTab::FILENAME
+          tab.write
+          (HOMEBREW_PREFIX/"opt/#{formula_name}").make_relative_symlink(keg_path)
+          formula_path.unlink
+
+          expect(described_class.factory(formula_name).no_autobump_message).to eq(:requires_manual_review)
+        end
+      end
+
       context "when given an alias" do
         subject(:formula) { described_class.factory("foo") }
 

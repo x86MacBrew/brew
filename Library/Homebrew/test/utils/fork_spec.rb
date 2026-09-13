@@ -29,6 +29,24 @@ RSpec.describe Utils do
   end
 
   describe "#safe_fork" do
+    it "preserves a parent failure while the child error pipe is open" do
+      IO.pipe do |ready_read, ready_write|
+        expect do
+          described_class.safe_fork(yield_parent: true) do |error_pipe|
+            if error_pipe
+              ready_read.close
+              ready_write.puts "ready"
+              ready_write.close
+            else
+              ready_write.close
+              ready_read.gets
+              raise "parent failed"
+            end
+          end
+        end.to raise_error(RuntimeError, "parent failed")
+      end
+    end
+
     it "responds to messages from the forked child" do
       messages = []
       handler = proc do |message|

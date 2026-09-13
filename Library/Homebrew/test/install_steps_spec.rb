@@ -407,7 +407,7 @@ RSpec.describe Homebrew::InstallSteps do
     command = class_double(SystemCommand)
     expect(command).to receive(:run)
       .with("helper", args: [""], sudo: false, env: { "EMPTY" => "" }, input: [], must_succeed: true,
-                      print_stdout: false, print_stderr: true, reset_uid: true, chdir: nil)
+                      print_stdout: false, print_stderr: true, chdir: nil)
 
     Homebrew::InstallSteps::Runner.new(context:, command:).run(steps)
 
@@ -700,7 +700,7 @@ RSpec.describe Homebrew::InstallSteps do
       .with(root/"prefix/libexec/helper", args: ["--path=#{root}/var"], sudo: false,
                                            env: { "EXAMPLE" => "#{root}/var/value" }, input: [],
                                            must_succeed: true, print_stdout: false,
-                                           print_stderr: true, reset_uid: true, chdir: nil)
+                                           print_stderr: true, chdir: nil)
 
     Homebrew::InstallSteps::Runner.new(context:, command:).run(steps)
   end
@@ -731,7 +731,7 @@ RSpec.describe Homebrew::InstallSteps do
     command = class_double(SystemCommand)
     expect(command).to receive(:run)
       .with(root/"prefix/bin/filter", args: [], sudo: false, env: {}, input: "input", must_succeed: true,
-                                      print_stdout: false, print_stderr: true, reset_uid: true,
+                                      print_stdout: false, print_stderr: true,
                                       chdir: root/"var/work")
       .and_return(result)
 
@@ -750,7 +750,7 @@ RSpec.describe Homebrew::InstallSteps do
     command = class_double(SystemCommand)
     expect(command).to receive(:run)
       .with(root/"prefix/libexec/helper", args: [], sudo: false, env: {}, input: [], must_succeed: false,
-                                           print_stdout: false, print_stderr: true, reset_uid: true, chdir: nil)
+                                           print_stdout: false, print_stderr: true, chdir: nil)
 
     Homebrew::InstallSteps::Runner.new(context:, command:).run(steps)
   end
@@ -785,7 +785,7 @@ RSpec.describe Homebrew::InstallSteps do
     expect(runner).to receive(:opoo).with("Unable to close Example")
     expect(command).to receive(:run!)
       .with("/usr/bin/pkill", args: ["-f", "/Applications/Example.app"], sudo: false,
-                              print_stdout: true, print_stderr: true, reset_uid: true)
+                              print_stdout: true, print_stderr: true)
       .exactly(3).times
       .and_raise(ErrorDuringExecution.new([], status: 1))
 
@@ -816,7 +816,7 @@ RSpec.describe Homebrew::InstallSteps do
     command = class_double(SystemCommand)
     expect(command).to receive(:run!)
       .with("/usr/bin/killall", args: ["Example"], sudo: false,
-                                print_stdout: true, print_stderr: true, reset_uid: true)
+                                print_stdout: true, print_stderr: true)
 
     Homebrew::InstallSteps::Runner.new(context:, command:).run(steps)
   end

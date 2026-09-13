@@ -450,13 +450,8 @@ class FormulaInstaller
 
       if message
         message += <<~EOS
-          If you're feeling brave, you can try to install from source with:
+          If no compatible bottle is available, you can try to install from source with:
             brew install --build-from-source #{formula}
-
-          This is a Tier 3 configuration:
-            #{Formatter.url("https://docs.brew.sh/Support-Tiers#tier-3")}
-          #{Formatter.bold("Do not report any issues to Homebrew/* repositories!")}
-          Read the above document instead before opening any issues or PRs.
         EOS
         raise CannotInstallFormulaError, message
       end
@@ -488,7 +483,8 @@ class FormulaInstaller
 
     recursive_deps = if pour_bottle?
       # Include implicit dependencies (except duplicates) in formulae to check
-      (formula.runtime_dependencies + formula.deps.select(&:implicit?)).uniq(&:name)
+      (formula.runtime_dependencies(read_from_tab: false, undeclared: false) + formula.deps.select(&:implicit?))
+        .uniq(&:name)
     else
       formula.recursive_dependencies
     end
@@ -1151,6 +1147,7 @@ on_request: installed_on_request?, options:)
 
   sig { void }
   def build
+    retain_tmp = keep_tmp? || debug_symbols? || interactive?
     FileUtils.rm_rf(formula.logs)
 
     @start_time = Time.now
@@ -1168,7 +1165,7 @@ on_request: installed_on_request?, options:)
     #    installation has a pristine ENV when it starts, forking now is
     #    the easiest way to do this
     with_env(HOMEBREW_BUILD_STAGING_PATH: staging_path, HOMEBREW_BUILD_FETCH_PHASE: nil) do
-      Sandbox.run_or_fork(*build_args(formula_path), step: "building") do |sandbox|
+      Sandbox.run_or_fork(*build_args(formula_path), step: "building", retain_tmp:, debug: debug?) do |sandbox|
         add_build_sandbox_rules(sandbox, formula_path, log_name: "build")
         if interactive?
           sandbox.allow_write_path(Dir.home)
@@ -1213,7 +1210,7 @@ on_request: installed_on_request?, options:)
   ensure
     # The build child removes the shared staging directory unless it has to
     # be kept, so this only matters when no child got as far as staging.
-    FileUtils.rm_rf(staging_path) if staging_path && !keep_tmp? && !debug_symbols? && !interactive? && !debug?
+    FileUtils.rm_rf(staging_path) if staging_path && !retain_tmp && !debug?
   end
 
   # Runs the formula's `fetch` method with network access before `install`
@@ -1222,8 +1219,9 @@ on_request: installed_on_request?, options:)
   def run_fetch(staging_path: nil)
     @formula = Homebrew::API::Formula.source_download_formula(formula) if formula.loaded_from_api?
 
+    retain_tmp = keep_tmp? || debug_symbols? || interactive?
     with_env(HOMEBREW_BUILD_FETCH_PHASE: "1", HOMEBREW_BUILD_STAGING_PATH: staging_path) do
-      Sandbox.run_or_fork(*build_args(formula_path), step: "fetching") do |sandbox|
+      Sandbox.run_or_fork(*build_args(formula_path), step: "fetching", retain_tmp:, debug: debug?) do |sandbox|
         add_build_sandbox_rules(sandbox, formula_path, log_name: "fetch")
         sandbox.deny_read_home
         sandbox.allow_write_temp_and_cache
@@ -1471,7 +1469,7 @@ on_request: installed_on_request?, options:)
     args << post_install_formula_path
 
     Sandbox.with_preserved_brew_file do
-      Sandbox.run_or_fork(*args, step: "running post-install") do |sandbox|
+      Sandbox.run_or_fork(*args, step: "running post-install", debug: debug?) do |sandbox|
         formula.logs.mkpath
         sandbox.record_log(formula.logs/"postinstall.sandbox.log")
         sandbox.allow_write_log(formula)

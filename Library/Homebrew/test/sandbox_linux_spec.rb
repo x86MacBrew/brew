@@ -42,7 +42,8 @@ RSpec.describe Sandbox, :needs_linux do
       end.not_to raise_error
     end
 
-    it "forwards child message handling options" do
+    it "forwards child message handling and temporary directory options" do
+      stub_const("HOMEBREW_TEMP", mktmpdir)
       messages = []
       handler = proc do |message|
         messages << message.chomp
@@ -59,7 +60,7 @@ RSpec.describe Sandbox, :needs_linux do
       RUBY
 
       sandbox.run RUBY_PATH, "-rsocket", "-e", script,
-                  passthrough_stdin: false, child_message_handler: handler
+                  passthrough_stdin: false, child_message_handler: handler, retain_tmp: true, debug: true
 
       expect(messages).to eq(["privileged step"])
     end

@@ -199,25 +199,22 @@ class GitDownloadStrategy < VCSDownloadStrategy
     # Convert any shallow clone to full clone
     if shallow_dir?
       command! "git",
-               args:      ["fetch", "origin", "--unshallow"],
-               chdir:     cached_location,
-               timeout:   Utils::Timer.remaining(timeout),
-               reset_uid: true
+               args:    ["fetch", "origin", "--unshallow"],
+               chdir:   cached_location,
+               timeout: Utils::Timer.remaining(timeout)
     else
       command! "git",
-               args:      ["fetch", "origin"],
-               chdir:     cached_location,
-               timeout:   Utils::Timer.remaining(timeout),
-               reset_uid: true
+               args:    ["fetch", "origin"],
+               chdir:   cached_location,
+               timeout: Utils::Timer.remaining(timeout)
     end
   end
 
   sig { override.params(timeout: T.nilable(Time)).void }
   def clone_repo(timeout: nil)
     command! "git",
-             args:      clone_args,
-             timeout:   Utils::Timer.remaining(timeout),
-             reset_uid: true
+             args:    clone_args,
+             timeout: Utils::Timer.remaining(timeout)
 
     command! "git",
              args:    ["config", "homebrew.cacheversion", cache_version],
@@ -254,15 +251,13 @@ class GitDownloadStrategy < VCSDownloadStrategy
   sig { params(timeout: T.nilable(Time)).void }
   def update_submodules(timeout: nil)
     command! "git",
-             args:      ["submodule", "foreach", "--recursive", "git submodule sync"],
-             chdir:     cached_location,
-             timeout:   Utils::Timer.remaining(timeout),
-             reset_uid: true
+             args:    ["submodule", "foreach", "--recursive", "git submodule sync"],
+             chdir:   cached_location,
+             timeout: Utils::Timer.remaining(timeout)
     command! "git",
-             args:      ["submodule", "update", "--init", "--recursive"],
-             chdir:     cached_location,
-             timeout:   Utils::Timer.remaining(timeout),
-             reset_uid: true
+             args:    ["submodule", "update", "--init", "--recursive"],
+             chdir:   cached_location,
+             timeout: Utils::Timer.remaining(timeout)
     fix_absolute_submodule_gitdir_references!
   end
 
@@ -276,9 +271,8 @@ class GitDownloadStrategy < VCSDownloadStrategy
   sig { void }
   def fix_absolute_submodule_gitdir_references!
     submodule_dirs = command!("git",
-                              args:      ["submodule", "--quiet", "foreach", "--recursive", "pwd"],
-                              chdir:     cached_location,
-                              reset_uid: true).stdout
+                              args:  ["submodule", "--quiet", "foreach", "--recursive", "pwd"],
+                              chdir: cached_location).stdout
 
     submodule_dirs.lines.map(&:chomp).each do |submodule_dir|
       work_dir = Pathname.new(submodule_dir)

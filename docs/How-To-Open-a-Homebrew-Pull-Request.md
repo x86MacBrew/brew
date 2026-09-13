@@ -176,13 +176,13 @@ To make changes based on feedback:
    ```
 
 2. Make any requested changes and commit them with `git add` and `git commit`.
-3. Squash new commits into one commit per formula:
+3. Squash new commits into one commit per formula or cask:
 
    ```sh
    git rebase --interactive origin/HEAD
    ```
 
-   If you are working on a PR for a single formula, `git commit --amend` is a convenient way of keeping your commits squashed as you go.
+   If you are working on a PR for a single formula or cask, `git commit --amend` is a convenient way of keeping your commits squashed as you go.
 4. Push to your remote fork's branch and the pull request:
 
    ```sh

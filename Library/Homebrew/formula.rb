@@ -828,7 +828,7 @@ class Formula
   sig { params(path: Pathname).returns(T.nilable(T.any(String, Symbol))) }
   def link_overwrite_keg_name(path)
     # Don't overwrite files not created by Homebrew.
-    return if path.stat.uid != HOMEBREW_ORIGINAL_BREW_FILE.stat.uid
+    return if path.stat.uid != HOMEBREW_BREW_FILE.stat.uid
 
     keg = Keg.for(path)
     # This keg doesn't belong to any current core/tap formula, most likely coming from a DIY install.
@@ -1734,9 +1734,6 @@ class Formula
       self.build = Tab.for_formula(self)
 
       new_env = {
-        TMPDIR:        HOMEBREW_TEMP,
-        TEMP:          HOMEBREW_TEMP,
-        TMP:           HOMEBREW_TEMP,
         HOMEBREW_PATH: nil,
         PATH:          PATH.new(ORIGINAL_PATHS),
       }
@@ -1745,11 +1742,7 @@ class Formula
       # the entire `postinstall.rb` process is already sandboxed by its parent.
       Dir.mktmpdir("#{name}-postinstall-", HOMEBREW_TEMP) do |home|
         postinstall_home = Pathname(home)
-        new_env[:HOME] = postinstall_home.to_s
         new_env.merge!(common_sandbox_env(postinstall_home))
-        # Keep postinstall Java temp files in Homebrew temp while the common
-        # sandbox environment points Java's user home at the cache.
-        new_env[:_JAVA_OPTIONS] += " -Djava.io.tmpdir=#{HOMEBREW_TEMP}"
         setup_home postinstall_home
 
         with_env(new_env) do
@@ -3420,9 +3413,6 @@ class Formula
     @prefix_returns_versioned_prefix = T.let(true, T.nilable(T::Boolean))
 
     test_env = {
-      TMPDIR:        HOMEBREW_TEMP,
-      TEMP:          HOMEBREW_TEMP,
-      TMP:           HOMEBREW_TEMP,
       TERM:          "dumb",
       PATH:          PATH.new(ENV.fetch("PATH"), HOMEBREW_PREFIX/"bin"),
       HOMEBREW_TERM: ENV.fetch("TERM", nil),
@@ -3441,9 +3431,7 @@ class Formula
       raise "Test path is unexpectedly unset." if testpath.nil?
 
       @testpath = T.let(testpath, T.nilable(Pathname))
-      test_env[:HOME] = testpath
       test_env.merge!(common_sandbox_env(testpath))
-      test_env[:_JAVA_OPTIONS] += " -Djava.io.tmpdir=#{HOMEBREW_TEMP}"
       setup_home testpath
       begin
         with_logging("test") do
@@ -3865,7 +3853,13 @@ class Formula
   # Common environment variables used by sandboxed fetch, build, test and postinstall phases.
   sig { params(home: Pathname).returns(T::Hash[Symbol, String]) }
   def common_sandbox_env(home)
-    Homebrew::PackageManagerCache.env.merge(
+    env = Homebrew::PackageManagerCache.env
+    env.merge(
+      _JAVA_OPTIONS:           [env[:_JAVA_OPTIONS], "-Djava.io.tmpdir=#{HOMEBREW_TEMP}"].compact.join(" "),
+      HOME:                    home.to_s,
+      TMPDIR:                  HOMEBREW_TEMP.to_s,
+      TEMP:                    HOMEBREW_TEMP.to_s,
+      TMP:                     HOMEBREW_TEMP.to_s,
       GIT_CONFIG_GLOBAL:       Utils::Git.no_global_config_file,
       GIT_TERMINAL_PROMPT:     "0",
       GOENV:                   "off",
@@ -3945,10 +3939,7 @@ class Formula
         HOMEBREW_PATH: nil,
       }
 
-      unless interactive
-        stage_env[:HOME] = env_home
-        stage_env.merge!(common_sandbox_env(env_home))
-      end
+      stage_env.merge!(common_sandbox_env(env_home)) unless interactive
 
       setup_home env_home
       # Don't dirty the git tree for git clones.
@@ -4470,17 +4461,22 @@ class Formula
     def build = stable.build
 
     # Get the `BUILD_FLAGS` from the formula's namespace set in `Formulary::load_formula`.
+    # The namespace is derived dynamically from the formula's own name.
+    # rubocop:disable Sorbet/ConstantsFromStrings
     sig { returns(T::Array[String]) }
     def build_flags
-      namespace = Utils.deconstantize(to_s)
-      return [] if namespace.empty?
-
-      # The namespace is derived dynamically from the formula's own name.
-      # rubocop:disable Sorbet/ConstantsFromStrings
-      mod = const_get(namespace)
-      mod.const_get(:BUILD_FLAGS)
-      # rubocop:enable Sorbet/ConstantsFromStrings
+      formula_namespace&.const_get(:BUILD_FLAGS) || []
     end
+
+    sig { returns(T.nilable(T::Module[T.anything])) }
+    def formula_namespace
+      namespace = Utils.deconstantize(to_s)
+      return if namespace.empty?
+
+      const_get(namespace)
+    end
+    private :formula_namespace
+    # rubocop:enable Sorbet/ConstantsFromStrings
 
     # Allows adding {.depends_on} and {Patch}es just to the {.stable} {SoftwareSpec}.
     # This is required instead of using a conditional.
@@ -5020,7 +5016,8 @@ class Formula
         raise ArgumentError, "no_autobump! can only be used in official Homebrew taps." if tap && !tap.official?
       end
 
-      if because.is_a?(Symbol) && !NO_AUTOBUMP_REASONS_LIST.key?(because)
+      if because.is_a?(Symbol) && !NO_AUTOBUMP_REASONS_LIST.key?(because) &&
+         !formula_namespace&.const_defined?(:LOADED_FROM_METADATA, false)
         raise ArgumentError, "'because' argument should use valid symbol or a string!"
       end
 

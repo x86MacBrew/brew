@@ -9,8 +9,8 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
       expect(described_class.latest_version(macos: MacOSVersion.new("27"))).to eq("27.0")
     end
 
-    it "returns Xcode 27 for Tahoe" do
-      expect(described_class.latest_version(macos: MacOSVersion.new("26"))).to eq("27.0")
+    it "returns Xcode 26.6 for Tahoe" do
+      expect(described_class.latest_version(macos: MacOSVersion.new("26"))).to eq("26.6")
     end
   end
 

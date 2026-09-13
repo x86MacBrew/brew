@@ -101,6 +101,10 @@ RSpec.describe Homebrew::FormulaCreator do
         described_class.new(url: "https://brew.sh/foo-0.1.tgz", mode:).write_formula!
       end
 
+      it "writes a formula with valid syntax when using #{mode} template" do
+        expect { Formulary.factory(formula) }.not_to raise_error
+      end
+
       specify "when using #{mode} template" do
         expect(formula).to be_a_file
         contents = formula.read

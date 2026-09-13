@@ -40,6 +40,7 @@ module OS
         (deny file-write-mode) ; deny non-allowlist file write mode operations
         (deny mach-lookup)
         (allow mach-lookup
+            (xpc-service-name "com.apple.MTLCompilerService")
             (global-name "com.apple.mobileassetd.v2")
             (global-name "com.apple.sysmond")
             (global-name "com.apple.bsd.dirhelper")
@@ -126,11 +127,6 @@ module OS
         seatbelt.close
 
         [SANDBOX_EXEC, "-f", seatbelt.path, *args]
-      end
-
-      sig { returns(T::Boolean) }
-      def allow_network_for_error_pipe?
-        true
       end
 
       sig { void }

@@ -722,14 +722,7 @@ class BuildError < RuntimeError
     end
 
     require "diagnostic"
-    checks = Homebrew::Diagnostic::Checks.new
-    checks.build_error_checks.each do |check|
-      out = checks.public_send(check)
-      next if out.nil?
-
-      puts
-      ofail out
-    end
+    Homebrew::Diagnostic.checks(:build_error_checks, fatal: false)
   end
 end
 

@@ -92,6 +92,8 @@ module Homebrew
                 *exec_args,
                 step:                 "testing #{f.full_name}",
                 warn_without_sandbox: false,
+                retain_tmp:           args.keep_tmp?,
+                debug:                args.debug?,
               ) do |sandbox|
                 f.logs.mkpath
                 sandbox.record_log(f.logs/"test.sandbox.log")

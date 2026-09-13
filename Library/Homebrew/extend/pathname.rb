@@ -44,7 +44,7 @@ class Pathname
   sig {
     params(sources: T.any(
       Resource, Resource::Partial, String, Pathname,
-      T::Array[T.any(String, Pathname)], T::Hash[T.any(String, Pathname), String]
+      T::Array[T.any(String, Pathname)], T::Hash[T.any(String, Pathname), T.any(String, Pathname)]
     )).void
   }
   def install(*sources)
@@ -77,7 +77,8 @@ class Pathname
   # @api public
   sig {
     params(
-      sources: T.any(String, Pathname, T::Array[T.any(String, Pathname)], T::Hash[T.any(String, Pathname), String]),
+      sources: T.any(String, Pathname, T::Array[T.any(String, Pathname)],
+                     T::Hash[T.any(String, Pathname), T.any(String, Pathname)]),
     ).void
   }
   def install_symlink(*sources)

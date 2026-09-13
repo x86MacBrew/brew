@@ -180,14 +180,11 @@ module GitHub
     # Gets the token from the GitHub CLI for github.com.
     sig { returns(T.nilable(String)) }
     def self.github_cli_token
-      require "utils/uid"
       # Avoid `Formula["gh"].opt_bin` so this method works even with `HOMEBREW_DISABLE_LOAD_FORMULA`.
-      env = Utils::Path.formula_opt_bin_env("gh").merge("HOME" => Utils::UID.uid_home).compact
       gh_out, _, result = system_command("gh",
-                                         args:            ["auth", "token", "--hostname", "github.com"],
-                                         env:,
-                                         print_stderr:    false,
-                                         run_as_real_uid: true).to_a
+                                         args:         ["auth", "token", "--hostname", "github.com"],
+                                         env:          Utils::Path.formula_opt_bin_env("gh"),
+                                         print_stderr: false).to_a
       return unless result.success?
 
       gh_out.chomp.presence
@@ -197,13 +194,10 @@ module GitHub
     # but only if that password looks like a GitHub access token.
     sig { returns(T.nilable(String)) }
     def self.keychain_username_password
-      require "utils/uid"
       git_credential_out, _, result = system_command("git",
-                                                     args:            ["credential-osxkeychain", "get"],
-                                                     input:           ["protocol=https\n", "host=github.com\n"],
-                                                     env:             { "HOME" => Utils::UID.uid_home }.compact,
-                                                     print_stderr:    false,
-                                                     run_as_real_uid: true).to_a
+                                                     args:         ["credential-osxkeychain", "get"],
+                                                     input:        ["protocol=https\n", "host=github.com\n"],
+                                                     print_stderr: false).to_a
       return unless result.success?
 
       git_credential_out.force_encoding("ASCII-8BIT")

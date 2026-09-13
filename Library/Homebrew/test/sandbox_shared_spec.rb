@@ -41,9 +41,10 @@ RSpec.describe Sandbox do
 
     it "configures and uses the sandbox when available" do
       allow(described_class).to receive_messages(new: command_sandbox, use_for?: true)
-      expect(command_sandbox).to receive(:run).with("command", "argument")
+      expect(command_sandbox).to receive(:run).with("command", "argument", retain_tmp: true, debug: true)
 
-      described_class.run_or_fork("command", "argument", step: "running a command") do |configured|
+      described_class.run_or_fork("command", "argument", step: "running a command",
+                                 retain_tmp: true, debug: true) do |configured|
         expect(configured).to eq(command_sandbox)
       end
     end
@@ -56,6 +57,69 @@ RSpec.describe Sandbox do
       described_class.run_or_fork("command", step: "running a command") do
         raise "sandbox should not be configured"
       end
+    end
+  end
+
+  describe "#run temporary directory" do
+    before do
+      stub_const("HOMEBREW_TEMP", HOMEBREW_TEMP/"sandbox")
+      HOMEBREW_TEMP.mkpath
+      allow(described_class).to receive(:terminal_ioctl_request).and_return(0)
+      allow(PTY).to receive(:open).and_wrap_original do |original, &block|
+        original.call do |controller, worker|
+          allow(worker).to receive(:ioctl).with(0, 0)
+          block.call(controller, worker)
+        end
+      end
+      allow(sandbox).to receive(:sandbox_command) { |args, _tmpdir| args }
+      allow(sandbox).to receive(:ensure_child_tty_available)
+      allow(sandbox).to receive(:apply_sandbox)
+      allow(sandbox).to receive(:record_sandbox_log)
+    end
+
+    it "gives the child a private writable socket directory and removes it afterwards" do
+      sandbox.deny_all_network
+      expect(sandbox).to receive(:sandbox_command) do |args, tmpdir|
+        expect(sandbox.profile.rules.select { |rule| rule.allow && rule.operation == "network*" }
+          .map { |rule| [rule.filter&.path, rule.filter&.type] }).to eq([[tmpdir, :subpath]])
+        args
+      end
+      expect do
+        sandbox.run RbConfig.ruby, "-e", <<~RUBY, HOMEBREW_TEMP
+          temporary = ENV.fetch("HOMEBREW_TEMP")
+          abort "Shared temporary directory" unless File.dirname(temporary) == ARGV.fetch(0)
+          abort "Unexpected permissions" unless File.stat(temporary).mode & 0777 == 0700
+          abort "Inconsistent environment" unless %w[TMPDIR TEMP TMP].all? { |key| ENV[key] == temporary }
+          File.write(File.join(temporary, "child-file"), "written")
+        RUBY
+      end.not_to raise_error
+      expect(sandbox.profile.rules).to include(have_attributes(allow: false, operation: "network*", filter: nil))
+      expect(HOMEBREW_TEMP.children).to be_empty
+    end
+
+    it "retains temporary files when requested" do
+      sandbox.run RbConfig.ruby, "-e", "exit", retain_tmp: true
+
+      expect(HOMEBREW_TEMP.children.length).to eq(1)
+    end
+
+    it "retains temporary files on failure when debugging" do
+      expect { sandbox.run RbConfig.ruby, "-e", "exit 1", debug: true }.to raise_error(ErrorDuringExecution)
+      expect(HOMEBREW_TEMP.children.length).to eq(1)
+    end
+
+    it "retains temporary files on interruption when debugging" do
+      allow(sandbox).to receive(:sandbox_command).and_raise(Interrupt)
+
+      expect { sandbox.run "command", debug: true }.to raise_error(Interrupt)
+      expect(HOMEBREW_TEMP.children.length).to eq(1)
+    end
+
+    it "does not retain temporary files for fatal exceptions when debugging" do
+      allow(sandbox).to receive(:sandbox_command).and_raise(NoMemoryError)
+
+      expect { sandbox.run "command", debug: true }.to raise_error(NoMemoryError)
+      expect(HOMEBREW_TEMP.children).to be_empty
     end
   end
 
@@ -225,7 +289,7 @@ RSpec.describe Sandbox do
     before do
       sandbox_class.test_executable_name = executable_name
       sandbox_class.unsuitable_executables = []
-      stub_const("HOMEBREW_ORIGINAL_BREW_FILE", homebrew_bin/"brew")
+      stub_const("HOMEBREW_BREW_FILE", homebrew_bin/"brew")
     end
 
     it "uses the first suitable executable candidate" do

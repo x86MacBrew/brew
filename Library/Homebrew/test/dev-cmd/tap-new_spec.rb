@@ -9,15 +9,18 @@ RSpec.describe Homebrew::DevCmd::TapNew do
   it_behaves_like "parseable arguments"
 
   it "initializes a new tap with a README file and GitHub Actions CI", :integration_test do
-    # To ensure that Utils::Git.setup_gpg! doesn't raise an error
-    setup_test_formula "gnupg"
+    ENV["HOMEBREW_GIT_NAME"] = "Homebrew Test"
+    ENV["HOMEBREW_GIT_EMAIL"] = "test@example.com"
 
-    expect { brew "tap-new", "--no-git", "--verbose", "homebrew/foo" }
+    expect { brew "tap-new", "--verbose", "homebrew/foo" }
       .to be_a_success
       .and output(%r{homebrew/foo}).to_stdout
       .and not_to_output.to_stderr
 
     expect(HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo/README.md").to exist
+    expect(Utils.safe_popen_read("git", "-C", HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo",
+                                 "log", "-1", "--format=%s"))
+      .to eq("Create homebrew/foo tap\n")
     dependabot_yml = (HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo/.github/dependabot.yml").read
     tests_yml = (HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo/.github/workflows/tests.yml").read
     publish_yml = (HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo/.github/workflows/publish.yml").read

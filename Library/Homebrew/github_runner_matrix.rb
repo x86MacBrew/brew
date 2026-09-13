@@ -134,7 +134,8 @@ class GitHubRunnerMatrix
                                                        NEWEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER)
 
       runner, timeout = if use_github_runner && github_runner_available
-        ["macos-#{version}", GITHUB_ACTIONS_RUNNER_TIMEOUT]
+        prefix = (macos_version >= "27") ? "xcode" : "macos"
+        ["#{prefix}-#{version}", GITHUB_ACTIONS_RUNNER_TIMEOUT]
       elsif macos_version >= :monterey
         ["#{version}-arm64#{ephemeral_suffix}", @runner_timeout]
       else
@@ -296,7 +297,7 @@ class GitHubRunnerMatrix
     end, T.nilable(String))
   end
 
-  NEWEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER = :tahoe
+  NEWEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER = :golden_gate
   OLDEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER = :sonoma
   GITHUB_ACTIONS_RUNNER_TIMEOUT = 360
   private_constant :NEWEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER, :OLDEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER,

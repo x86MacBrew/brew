@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "utils/interrupts"
+require "securerandom"
 
 require "utils/output"
 
@@ -18,14 +19,18 @@ class Mktemp
   # With `path`, reuse that existing directory (e.g. one shared between the
   # fetch and build phases) rather than creating a temporary one.
   # Otherwise create the directory under `parent`, unless retaining it in cache.
+  # With `compact`, use one prefix character and eight random characters. Under
+  # `/private/tmp`, this leaves 78 bytes for descendants within libassuan's
+  # 102-byte Unix socket path limit on macOS.
   sig {
     params(prefix: String, retain: T::Boolean, retain_in_cache: T::Boolean, path: T.nilable(Pathname),
-           parent: Pathname).void
+           parent: Pathname, compact: T::Boolean).void
   }
-  def initialize(prefix, retain: false, retain_in_cache: false, path: nil, parent: HOMEBREW_TEMP)
+  def initialize(prefix, retain: false, retain_in_cache: false, path: nil, parent: HOMEBREW_TEMP, compact: false)
     @prefix = prefix
     @path = path
     @parent = parent
+    @compact = compact
     @retain_in_cache = retain_in_cache
     @retain = T.let(retain || @retain_in_cache, T::Boolean)
     @quiet = T.let(false, T::Boolean)
@@ -96,6 +101,14 @@ class Mktemp
       chmod_rm_rf(tmp_dir) # clear out previous staging directory
       tmp_dir.mkpath
       tmp_dir
+    elsif @compact
+      begin
+        compact_dir = @parent/"#{prefix_name[0]}-#{SecureRandom.alphanumeric(8)}"
+        compact_dir.mkdir(0700)
+        compact_dir
+      rescue Errno::EEXIST
+        retry
+      end
     else
       Pathname.new(Dir.mktmpdir("#{prefix_name}-", @parent.to_s))
     end
@@ -106,8 +119,8 @@ class Mktemp
     # Reference from `man 2 open`
     # > When a new file is created, it is given the group of the directory which
     # contains it.
-    group_id = if HOMEBREW_ORIGINAL_BREW_FILE.grpowned?
-      HOMEBREW_ORIGINAL_BREW_FILE.stat.gid
+    group_id = if HOMEBREW_BREW_FILE.grpowned?
+      HOMEBREW_BREW_FILE.stat.gid
     else
       Process.gid
     end

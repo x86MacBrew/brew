@@ -61,6 +61,12 @@ RSpec.describe Sandbox, :needs_macos do
       expect(sandbox.seatbelt_profile).to include('(global-name "com.apple.mobileassetd.v2")')
     end
 
+    it "allows runtime Metal compilation when network access is denied" do
+      sandbox.deny_all_network
+
+      expect(sandbox.seatbelt_profile).to include('(xpc-service-name "com.apple.MTLCompilerService")')
+    end
+
     it "allows process discovery when network access is denied" do
       sandbox.deny_all_network
 
@@ -119,6 +125,8 @@ RSpec.describe Sandbox, :needs_macos do
   end
 
   describe "#run" do
+    let(:gpgme_test_home) { Pathname("gpgme-20260911-52880-n7d0ah/gpgme-2.2.0/tests/gpg") }
+
     let(:handlers_for_scheme) do
       lambda do |scheme|
         SystemCommand.run!("/usr/bin/osascript", args: ["-l", "JavaScript", "-e", <<~JS, scheme]).stdout
@@ -189,17 +197,14 @@ RSpec.describe Sandbox, :needs_macos do
       end
     end
 
-    it "runs a private Unix socket service online and offline" do
-      sandbox.allow_write_path(dir)
-
+    it "runs a private Unix socket task host online and offline" do
       expect do
         [true, false].each do |network_access_allowed|
           sandbox.deny_all_network unless network_access_allowed
-          sandbox.allow_network path: dir, type: :subpath
-          sandbox.run RbConfig.ruby, "-rsocket", "-rtimeout", "-e", <<~'RUBY', dir
-            Dir.chdir(ARGV.fetch(0))
+          sandbox.run RbConfig.ruby, "-rsocket", "-rtimeout", "-e", <<~'RUBY'
+            Dir.chdir(ENV.fetch("TMPDIR"))
             Dir.mkdir("sockets")
-            UNIXServer.open("sockets/database.sock") do |server|
+            UNIXServer.open("sockets/CoreFxPipe_task") do |server|
               pid = fork do
                 Timeout.timeout(5) do
                   client = server.accept
@@ -209,7 +214,7 @@ RSpec.describe Sandbox, :needs_macos do
               end
               begin
                 Timeout.timeout(5) do
-                  UNIXSocket.open("sockets/database.sock") do |client|
+                  UNIXSocket.open("sockets/CoreFxPipe_task") do |client|
                     client.sendmsg("query\n")
                     abort "Unexpected service response" unless client.gets == "QUERY\n"
                   end
@@ -219,10 +224,47 @@ RSpec.describe Sandbox, :needs_macos do
               end
               abort "Service failed" unless $?.success?
             end
-            File.unlink("sockets/database.sock")
+            File.unlink("sockets/CoreFxPipe_task")
             Dir.rmdir("sockets")
           RUBY
         end
+      end.not_to raise_error
+    end
+
+    it "connects to a private GnuPG agent at the gpgme build path when network access is denied" do
+      gpgconf = which("gpgconf", ENV.fetch("HOMEBREW_PATH"))
+      gpg_connect_agent = which("gpg-connect-agent", ENV.fetch("HOMEBREW_PATH"))
+      skip "GnuPG not installed." if !gpgconf || !gpg_connect_agent
+
+      # libassuan limits absolute Unix socket paths to 102 bytes on macOS.
+      stub_const("HOMEBREW_TEMP", Pathname("/private/tmp"))
+      sandbox.deny_all_network
+
+      expect do
+        sandbox.run RbConfig.ruby, "-rfileutils", "-e", <<~RUBY, gpgconf, gpg_connect_agent, gpgme_test_home
+          home = File.join(ENV.fetch("TMPDIR"), ARGV.fetch(2))
+          FileUtils.mkdir_p(home, mode: 0700)
+          ENV["GNUPGHOME"] = home
+          begin
+            abort "Agent connection failed" unless system(ARGV.fetch(1), "GETINFO pid", "/bye")
+          ensure
+            system(ARGV.fetch(0), "--kill", "all")
+          end
+        RUBY
+      end.not_to raise_error
+    end
+
+    it "keeps gpgme's private Unix socket paths within libassuan's macOS limit" do
+      stub_const("HOMEBREW_TEMP", Pathname("/private/tmp"))
+      sandbox.deny_all_network
+
+      expect do
+        sandbox.run RbConfig.ruby, "-rfileutils", "-rsocket", "-e", <<~'RUBY', gpgme_test_home
+          socket = File.join(ENV.fetch("TMPDIR"), ARGV.fetch(0), "S.gpg-agent.browser")
+          abort "Socket path exceeds libassuan's macOS limit: #{socket.bytesize} bytes" if socket.bytesize > 102
+          FileUtils.mkdir_p(File.dirname(socket), mode: 0700)
+          UNIXServer.open(socket, &:close)
+        RUBY
       end.not_to raise_error
     end
 
@@ -367,6 +409,21 @@ RSpec.describe Sandbox, :needs_macos do
       expect do
         sandbox.run "/usr/bin/xcrun", "--no-cache", "--sdk", "macosx", "metal", "--version"
       end.not_to raise_error
+    end
+
+    it "compiles a fresh Metal kernel when network access is denied" do
+      SystemCommand.run!("/usr/bin/clang", args: [
+        "-fobjc-arc", "-framework", "Foundation", "-framework", "Metal", fixture("metal.m"), "-o", file
+      ])
+      control = SystemCommand.run(file)
+      skip "Metal device not available." if control.exit_status == 77
+
+      control.assert_success!
+      sandbox.allow_write_temp_and_cache
+      sandbox.deny_read_home
+      sandbox.deny_all_network
+
+      expect { sandbox.run file }.not_to raise_error
     end
 
     it "allows pgrep to find a child process when network access is denied" do

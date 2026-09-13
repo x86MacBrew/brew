@@ -143,6 +143,11 @@ module ELFShim
     metadata.interpreter
   end
 
+  sig { returns(T::Boolean) }
+  def pie?
+    metadata.pie?
+  end
+
   sig { params(interpreter: T.nilable(String), rpath: T.nilable(String)).void }
   def patch!(interpreter: nil, rpath: nil)
     return if interpreter.blank? && rpath.blank?
@@ -205,6 +210,13 @@ module ELFShim
       @section_names = T.let(patcher.elf.sections.map(&:name).compact_blank, T::Array[String])
 
       @dt_flags_1 = T.let(dynamic_segment&.tag_by_type(:flags_1)&.value, T.nilable(Integer))
+    end
+
+    sig { returns(T::Boolean) }
+    def pie?
+      return false if @dt_flags_1.nil?
+
+      @dt_flags_1 & ELFTools::Constants::DF::DF_1_PIE != 0
     end
 
     sig { returns(T::Array[String]) }

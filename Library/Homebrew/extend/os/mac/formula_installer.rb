@@ -13,7 +13,7 @@ module OS
         ::Hardware::CPU.arm? &&
           !::Homebrew::EnvConfig.developer? &&
           !OS::Mac.version.outdated_release? &&
-          (installed_on_request? || !formula.any_version_installed?)
+          !formula.any_version_installed?
       end
     end
   end

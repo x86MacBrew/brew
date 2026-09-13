@@ -23,6 +23,18 @@ RSpec.describe "Bash" do
     subject(:brew) { HOMEBREW_LIBRARY_PATH.parent.parent/"bin/brew" }
 
     it { is_expected.to have_valid_bash_syntax }
+
+    it "rejects mismatched real and effective UIDs before dispatching a command" do
+      results = [[1000, 1001], [0, 1000], [1000, 0]].map do |uid, euid|
+        # Bash's UID and EUID are read-only, so substitute them in the script.
+        script = brew.read.gsub("${UID}", uid.to_s).gsub("${EUID}", euid.to_s)
+        stdout, stderr, status = Open3.capture3("/bin/bash", "-puc", script, brew.to_s, "--prefix")
+        [stdout, stderr, status.exitstatus]
+      end
+
+      expect(results)
+        .to all(eq(["", "Error: Running Homebrew with different real and effective UIDs is not supported.\n", 1]))
+    end
   end
 
   describe "setup-locale" do

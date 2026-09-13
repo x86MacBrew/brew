@@ -911,7 +911,7 @@ module Cask
 
     sig { params(because: T.any(String, Symbol)).void }
     def set_no_autobump(because:)
-      if because.is_a?(Symbol) && !NO_AUTOBUMP_REASONS_LIST.key?(because)
+      if because.is_a?(Symbol) && !NO_AUTOBUMP_REASONS_LIST.key?(because) && !@cask.loaded_from_metadata?
         raise ArgumentError, "'because' argument should use valid symbol or a string!"
       end
 

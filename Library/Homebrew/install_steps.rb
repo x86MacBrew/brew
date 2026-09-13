@@ -1251,7 +1251,7 @@ module Homebrew
         result = @command.run(command, args:, sudo: step["sudo"] == true, env: environment, input:,
                                      must_succeed: step["allow_failure"] != true,
                                      print_stdout: step["print_stdout"] == true,
-                                     print_stderr: step["suppress_stderr"] != true, reset_uid: true,
+                                     print_stderr: step["suppress_stderr"] != true,
                                      chdir: working_directory)
 
         return unless step.key?("stdout_path")
@@ -1625,12 +1625,12 @@ module Homebrew
 
       sig { params(command: SystemCommandArg, args: SystemCommandArg, sudo: T::Boolean).void }
       def run_command(command, *args, sudo: false)
-        @command.run!(command, args: args, sudo:, print_stdout: true, print_stderr: true, reset_uid: true)
+        @command.run!(command, args: args, sudo:, print_stdout: true, print_stderr: true)
       end
 
       sig { params(command: SystemCommandArg, args: SystemCommandArg, sudo: T::Boolean).returns(String) }
       def run_command_output(command, *args, sudo: false)
-        @command.run!(command, args: args, sudo:, print_stderr: true, reset_uid: true).stdout
+        @command.run!(command, args: args, sudo:, print_stderr: true).stdout
       end
     end
   end

@@ -28,7 +28,7 @@ RSpec.describe GitHubRunnerMatrix, :no_api do
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("HOMEBREW_LINUX_SELF_HOSTED", "false").and_return("false")
     allow(ENV).to receive(:fetch).with("HOMEBREW_MACOS_LONG_TIMEOUT", "false").and_return("false")
-    allow(ENV).to receive(:fetch).with("HOMEBREW_MACOS_BUILD_ON_GITHUB_RUNNER", "false").and_return("false")
+    ENV["HOMEBREW_MACOS_BUILD_ON_GITHUB_RUNNER"] = "false"
     allow(ENV).to receive(:fetch).with("GITHUB_RUN_ID").and_return("12345")
     allow(ENV).to receive(:fetch).with("HOMEBREW_EVAL_ALL", nil).and_call_original
     allow(ENV).to receive(:fetch).with("HOMEBREW_SIMULATE_MACOS_ON_LINUX", nil).and_call_original
@@ -53,16 +53,41 @@ RSpec.describe GitHubRunnerMatrix, :no_api do
         .to eq(["macOS 27-arm64", "macOS 26-arm64", "macOS 15-arm64"])
     end
 
-    it "uses a self-hosted runner for Golden Gate dependents with a two-hour timeout" do
-      ENV["GITHUB_RUN_ID"] = "12345"
+    it "uses GitHub runners for macOS dependents with a six-hour timeout" do
       allow(Formula).to receive(:all).and_return([testball, testball_depender].map(&:formula))
       runners = described_class.new([testball], [], all_supported: false, dependent_matrix: true)
                                .active_runner_specs_hash
 
       expect(runners).to include(
-        include(name: "macOS 27-arm64", runner: "27-arm64-12345-deps", timeout: 120),
+        include(name: "macOS 27-arm64", runner: "xcode-27", timeout: 360, cleanup: true),
         include(name: "macOS 26-arm64", runner: "macos-26", timeout: 360),
         include(name: "macOS 15-arm64", runner: "macos-15", timeout: 360),
+      )
+    end
+
+    it "uses a GitHub runner for Golden Gate bottles when requested" do
+      ENV["HOMEBREW_MACOS_BUILD_ON_GITHUB_RUNNER"] = "true"
+      runners = described_class.new([testball], [], all_supported: false, dependent_matrix: false)
+                               .active_runner_specs_hash
+
+      expect(runners).to include(
+        include(name: "macOS 27-arm64", runner: "xcode-27", timeout: 360, cleanup: true),
+      )
+    end
+
+    it "preserves GitHub runner labels when older macOS symbols are removed" do
+      allow(BottleTransition).to receive(:active?).and_return(false)
+      stub_const("MacOSVersion::SYMBOLS", { future: "28" }.merge(MacOSVersion::SYMBOLS.except(:golden_gate)))
+      stub_const("GitHubRunnerMatrix::NEWEST_HOMEBREW_CORE_MACOS_RUNNER", :future)
+      stub_const("GitHubRunnerMatrix::NEWEST_GITHUB_ACTIONS_ARM_MACOS_RUNNER", :future)
+      ENV["HOMEBREW_MACOS_BUILD_ON_GITHUB_RUNNER"] = "true"
+      runners = described_class.new([], [], all_supported: true, dependent_matrix: false)
+                               .active_runner_specs_hash
+
+      expect(runners).to include(
+        include(name: "macOS 28-arm64", runner: "xcode-28", timeout: 360, cleanup: true),
+        include(name: "macOS 26-arm64", runner: "macos-26", timeout: 360, cleanup: true),
+        include(name: "macOS 15-arm64", runner: "macos-15", timeout: 360, cleanup: true),
       )
     end
 

@@ -60,7 +60,7 @@ module UnpackStrategy
         result = loop do
           # We need to use `find` here instead of Ruby in order to properly handle
           # file names containing special characters, such as “e” + “´” vs. “é”.
-          r = system_command("find", args: [".", "-print0"], chdir: pathname, print_stderr: false, reset_uid: true)
+          r = system_command("find", args: [".", "-print0"], chdir: pathname, print_stderr: false)
           tries += 1
 
           # Spurious bug on CI, which in most cases can be worked around by retrying.
@@ -160,9 +160,8 @@ module UnpackStrategy
           end
 
           system_command!("ditto",
-                          args:      ["--bom", bomfile.path, "--", path, unpack_dir],
-                          verbose:,
-                          reset_uid: true)
+                          args:    ["--bom", bomfile.path, "--", path, unpack_dir],
+                          verbose:)
 
           FileUtils.chmod "u+w", Pathname.glob(unpack_dir/"**/*", File::FNM_DOTMATCH).reject(&:symlink?)
         end

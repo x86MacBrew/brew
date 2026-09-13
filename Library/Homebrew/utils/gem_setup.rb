@@ -270,12 +270,7 @@ module Utils
         end
 
         bundle_installed = if bundle_install_required
-          Process.wait(fork do
-            # Native build scripts fail if EUID != UID
-            Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
-            exec bundle, "install", out: :err
-          end)
-          if $CHILD_STATUS.success?
+          if system bundle, "install", out: :err
             true
           else
             message = <<~EOS

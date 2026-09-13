@@ -1,6 +1,9 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "io/console"
+require "pty"
+
 RSpec.describe Tty do
   describe "::strip_ansi" do
     it "removes ANSI escape codes from a string" do
@@ -66,34 +69,63 @@ RSpec.describe Tty do
   describe "::size" do
     before do
       described_class.remove_instance_variable(:@size) if described_class.instance_variable_defined?(:@size)
+      allow(Utils).to receive(:popen_read_text).and_raise("unexpected subprocess")
     end
 
     after do
       described_class.remove_instance_variable(:@size) if described_class.instance_variable_defined?(:@size)
     end
 
-    it "memoises a failed `stty size` probe instead of respawning it" do
-      expect(Utils).to receive(:popen_read_text).with("/bin/stty", "size", err: File::NULL).once.and_return("")
+    it "reads and memoises the terminal size without a subprocess" do
+      PTY.open do |controller, terminal|
+        controller.winsize = [40, 160]
+        $stdin.reopen(terminal)
+        size = described_class.size
+        controller.winsize = [50, 180]
+
+        expect([size, described_class.size]).to eq([[40, 160], [40, 160]])
+      end
+    end
+
+    it "returns nil when stdin is redirected" do
+      $stdin.reopen(File::NULL)
+
+      expect(described_class.size).to be_nil
+    end
+
+    it "returns nil when stdin is closed" do
+      original_stdin = $stdin
+      $stdin = $stdin.dup
+      $stdin.close
+
+      expect(described_class.size).to be_nil
+    ensure
+      $stdin = original_stdin
+    end
+
+    it "memoises a failed terminal size probe" do
+      allow($stdin).to receive(:tty?).and_return(true)
+      allow($stdin).to receive(:winsize).and_invoke(proc { raise Errno::ENOTTY }, proc { [40, 160] })
 
       # We call this twice to check the failure is memoised
-      expect(described_class.size).to be_nil
-      expect(described_class.size).to be_nil
+      expect([described_class.size, described_class.size]).to eq([nil, nil])
     end
 
     it "does not expose an unfinished size to another thread" do
       probe_started = Queue.new
       release_probe = Queue.new
-      allow(Utils).to receive(:popen_read_text).with("/bin/stty", "size", err: File::NULL).and_invoke(
+      allow($stdin).to receive(:tty?).and_return(true)
+      allow($stdin).to receive(:winsize).and_invoke(
         proc {
           probe_started << true
           release_probe.pop
-          "40 160"
+          [40, 160]
         },
-        proc { "40 160" },
+        proc { [40, 160] },
       )
 
       probing_thread = Thread.new { described_class.size }
-      probe_started.pop
+      probe_started.pop(timeout: 5)
 
       expect(described_class.size).to eq([40, 160])
     ensure

@@ -231,7 +231,7 @@ module Cask
       def cask(header_token, **options, &block)
         raise CaskTokenMismatchError.new(token, header_token) if token != header_token
 
-        super(header_token, **options, sourcefile_path: path, &block)
+        super(header_token, **options, sourcefile_path: path, loaded_from_metadata: @from_installed_caskfile, &block)
       end
     end
 
@@ -509,6 +509,7 @@ module Cask
         cask_options = {
           loaded_from_api:          true,
           loaded_from_internal_api: internal_api,
+          loaded_from_metadata:     @from_installed_caskfile,
           api_source:,
           sourcefile_path:          @sourcefile_path,
           source:                   JSON.pretty_generate(api_source),

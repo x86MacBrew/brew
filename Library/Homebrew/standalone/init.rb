@@ -59,7 +59,6 @@ HOMEBREW_LIBRARY_PATH = Pathname(dir).parent.realpath.freeze
 HOMEBREW_USING_PORTABLE_RUBY = RbConfig.ruby.include?("/vendor/portable-ruby/").freeze
 
 HOMEBREW_BUNDLER_VERSION = ENV.fetch("HOMEBREW_BUNDLER_VERSION").freeze
-ENV["BUNDLER_VERSION"] = HOMEBREW_BUNDLER_VERSION
 
 require_relative "../utils/gem_setup"
 Utils::GemSetup.setup_gem_environment!(setup_path: false)

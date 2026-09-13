@@ -56,9 +56,6 @@ module Homebrew
         groups = update ? Utils::GemSetup.valid_gem_groups : ["typecheck"]
         Utils::GemSetup.install_bundler_gems!(groups:)
 
-        # Sorbet doesn't use bash privileged mode so we align EUID and UID here.
-        Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
-
         HOMEBREW_LIBRARY_PATH.cd do
           if update
             workers = args.debug? ? ["--workers=1"] : []

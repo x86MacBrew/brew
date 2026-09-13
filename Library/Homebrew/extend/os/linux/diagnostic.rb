@@ -29,11 +29,11 @@ module OS
 
         sig { returns(T::Array[String]) }
         def supported_configuration_checks
-          %w[
+          (super + %w[
             check_glibc_minimum_version
             check_kernel_minimum_version
             check_supported_architecture
-          ].freeze
+          ]).freeze
         end
 
         sig { returns(T.nilable(::Homebrew::Diagnostic::Finding)) }

@@ -45,8 +45,7 @@ module Homebrew
                                      args:         [scope, *args.map(&:to_s)],
                                      print_stdout: mode == :default,
                                      print_stderr: mode == :default,
-                                     must_succeed: mode == :default,
-                                     reset_uid:    true)
+                                     must_succeed: mode == :default)
           if mode == :read
             result.stdout
           elsif mode == :quiet

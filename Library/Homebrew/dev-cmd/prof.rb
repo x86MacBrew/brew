@@ -68,7 +68,6 @@ module Homebrew
           Utils::Browser.open output_filename if $stdout.tty?
         elsif args.vernier?
           output_filename = "prof/vernier.json"
-          Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
           # Avoid `vernier run`: it injects `vernier/autorun` through `RUBYOPT`,
           # which child Ruby processes inherit. Profiling only this Ruby process
           # keeps nested `brew` commands from trying to write the same profile.

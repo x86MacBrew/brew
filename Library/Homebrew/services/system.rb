@@ -97,15 +97,12 @@ module Homebrew
           "system"
         elsif (ssh_tty = ENV.fetch("HOMEBREW_SSH_TTY", nil).present? &&
                File.stat("/dev/console").uid != Process.uid) ||
-              (sudo_user = ENV.fetch("HOMEBREW_SUDO_USER", nil).present?) ||
-              (Process.uid != Process.euid)
+              ENV.fetch("HOMEBREW_SUDO_USER", nil).present?
           if @output_warning.blank? && ENV.fetch("HOMEBREW_SERVICES_NO_DOMAIN_WARNING", nil).blank?
             if ssh_tty
               opoo "running over SSH without /dev/console ownership, using user/* instead of gui/* domain!"
-            elsif sudo_user
-              opoo "running through sudo, using user/* instead of gui/* domain!"
             else
-              opoo "uid and euid do not match, using user/* instead of gui/* domain!"
+              opoo "running through sudo, using user/* instead of gui/* domain!"
             end
             unless Homebrew::EnvConfig.no_env_hints?
               $stderr.puts "Hide this warning by setting `HOMEBREW_SERVICES_NO_DOMAIN_WARNING=1`."
@@ -113,7 +110,7 @@ module Homebrew
             end
             @output_warning = T.let(true, T.nilable(TrueClass))
           end
-          "user/#{Process.euid}"
+          "user/#{Process.uid}"
         else
           "gui/#{Process.uid}"
         end
@@ -122,7 +119,7 @@ module Homebrew
       sig { returns(T::Array[String]) }
       def self.candidate_domain_targets
         candidates = [domain_target]
-        candidates += ["user/#{Process.euid}", "gui/#{Process.uid}"] unless root?
+        candidates += ["user/#{Process.uid}", "gui/#{Process.uid}"] unless root?
         candidates.uniq
       end
 

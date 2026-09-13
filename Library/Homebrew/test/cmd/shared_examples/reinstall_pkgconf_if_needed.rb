@@ -17,7 +17,7 @@ RSpec.shared_examples "reinstall_pkgconf_if_needed" do
       before do
         allow(OS).to receive(:mac?).and_return(true)
         allow(Formula).to receive(:[]).with("pkgconf").and_return(formula)
-        allow(Homebrew::Install).to receive(:fetch_formulae).with([formula_installer])
+        allow(Homebrew::Install).to receive(:fetch_formulae).with([formula_installer]).and_return([formula_installer])
         allow(Homebrew::Reinstall).to receive(:build_install_context).and_return(context)
       end
 

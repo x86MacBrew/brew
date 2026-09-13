@@ -279,11 +279,15 @@ class Bottle
 
   sig { returns(T::Hash[String, T.untyped]) }
   def tab_attributes
-    if (resource = github_packages_manifest_resource) && resource.downloaded?
-      return resource.tab
-    end
+    resource = github_packages_manifest_resource
+    return {} unless resource&.downloaded?
 
-    {}
+    begin
+      resource.tab
+    rescue Resource::BottleManifest::Error
+      fetch_tab(quiet: true)
+      resource.tab
+    end
   end
 
   sig { returns(T.nilable(Integer)) }

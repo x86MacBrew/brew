@@ -94,9 +94,9 @@ module OS
 
         sig { returns(T::Array[String]) }
         def supported_configuration_checks
-          %w[
+          (super + %w[
             check_for_unsupported_macos
-          ].freeze
+          ]).freeze
         end
 
         sig { returns(T::Array[String]) }

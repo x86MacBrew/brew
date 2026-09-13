@@ -14,7 +14,15 @@ RSpec.describe Test::Helper::IntegrationTest do
     (HOMEBREW_PREFIX/"bin").mkpath
     example.run
   ensure
-    FileUtils.rm_rf HOMEBREW_PREFIX/"bin"
+    FileUtils.rm_rf [HOMEBREW_PREFIX/"bin", HOMEBREW_PREFIX/"Library/Homebrew"]
+  end
+
+  it "copies an executable Homebrew entry point into the test prefix" do
+    FileUtils.touch HOMEBREW_PREFIX/"bin/brew"
+    brew_sh_path = Pathname(helper.test_prefix_brew_sh)
+
+    expect([brew_sh_path.symlink?, brew_sh_path.executable?, brew_sh_path.read])
+      .to eq([false, true, HOMEBREW_BREW_FILE.read])
   end
 
   it "disables Sorbet checking in Ruby integration commands" do

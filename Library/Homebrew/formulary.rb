@@ -118,9 +118,10 @@ module Formulary
       namespace:     String,
       flags:         T::Array[String],
       ignore_errors: T::Boolean,
+      from_metadata: T::Boolean,
     ).returns(T.class_of(Formula))
   }
-  def self.load_formula(name, path, contents, namespace, flags:, ignore_errors:)
+  def self.load_formula(name, path, contents, namespace, flags:, ignore_errors:, from_metadata: false)
     raise "Formula loading disabled by `$HOMEBREW_DISABLE_LOAD_FORMULA`!" if Homebrew::EnvConfig.disable_load_formula?
 
     Homebrew::Trust.require_trusted_formula!(name, path)
@@ -141,6 +142,7 @@ module Formulary
       # Set `BUILD_FLAGS` in the formula's namespace so we can
       # access them from within the formula's class scope.
       mod.const_set(:BUILD_FLAGS, flags)
+      mod.const_set(:LOADED_FROM_METADATA, true) if from_metadata
       mod.module_eval(contents, path.to_s)
     rescue NameError, ArgumentError, ScriptError, MethodDeprecatedError, MacOSVersion::Error => e
       remove_const(namespace)
@@ -204,13 +206,14 @@ module Formulary
   end
 
   sig {
-    params(name: String, path: Pathname, flags: T::Array[String], ignore_errors: T::Boolean)
+    params(name: String, path: Pathname, flags: T::Array[String], ignore_errors: T::Boolean,
+           from_metadata: T::Boolean)
       .returns(T.class_of(Formula))
   }
-  def self.load_formula_from_path(name, path, flags:, ignore_errors:)
+  def self.load_formula_from_path(name, path, flags:, ignore_errors:, from_metadata: false)
     contents = path.open("r") { |f| ensure_utf8_encoding(f).read }
     namespace = "FormulaNamespace#{namespace_key(path.to_s)}"
-    klass = load_formula(name, path, contents, namespace, flags:, ignore_errors:)
+    klass = load_formula(name, path, contents, namespace, flags:, ignore_errors:, from_metadata:)
     platform_cache[:path] ||= {}
     platform_cache.fetch(:path)[path.to_s] = klass
   end
@@ -520,7 +523,7 @@ module Formulary
     def load_file(flags:, ignore_errors:)
       raise FormulaUnavailableError, name unless path.file?
 
-      Formulary.load_formula_from_path(name, path, flags:, ignore_errors:)
+      Formulary.load_formula_from_path(name, path, flags:, ignore_errors:, from_metadata: is_a?(FromKegLoader))
     end
   end
 
@@ -572,7 +575,7 @@ module Formulary
       formula = begin
         contents = Utils::Bottles.formula_contents(@bottle_path, name:)
         Formulary.from_contents(name, @cellar_formula_path, contents, spec,
-                                tap:, force_bottle:, flags:, ignore_errors:)
+                                tap:, force_bottle:, flags:, ignore_errors:, from_metadata: true)
       rescue FormulaUnreadableError => e
         opoo <<~EOS
           Unreadable formula in #{@bottle_path}:
@@ -595,7 +598,7 @@ module Formulary
   class FromPathLoader < FormulaLoader
     sig {
       params(ref: T.any(String, Pathname, URI::Generic), from: T.nilable(Symbol), warn: T::Boolean)
-        .returns(T.nilable(T.attached_class))
+        .returns(T.nilable(T.any(T.attached_class, FromKegLoader)))
     }
     def self.try_new(ref, from: nil, warn: false)
       path = case ref
@@ -622,6 +625,17 @@ module Formulary
       end
 
       return if path.extname != ".rb"
+
+      if path.parent.basename.to_s == ".brew"
+        begin
+          keg = Keg.for(path)
+        rescue NotAKegError
+          keg = nil
+        end
+        if keg && path.realpath == keg/".brew/#{keg.name}.rb"
+          return FromKegLoader.new(keg.name, path, tap: keg.tab.tap)
+        end
+      end
 
       new(path, alias_path:, tap:)
     end
@@ -888,16 +902,17 @@ module Formulary
     sig { returns(String) }
     attr_reader :contents
 
-    sig { params(name: String, path: Pathname, contents: String, tap: T.nilable(Tap)).void }
-    def initialize(name, path, contents, tap: nil)
+    sig { params(name: String, path: Pathname, contents: String, tap: T.nilable(Tap), from_metadata: T::Boolean).void }
+    def initialize(name, path, contents, tap: nil, from_metadata: false)
       @contents = contents
+      @from_metadata = from_metadata
       super name, path, tap:
     end
 
     sig { override.params(flags: T::Array[String], ignore_errors: T::Boolean).returns(T.class_of(Formula)) }
     def klass(flags:, ignore_errors:)
       namespace = "FormulaNamespace#{Digest::MD5.hexdigest(contents.to_s)}"
-      Formulary.load_formula(name, path, contents, namespace, flags:, ignore_errors:)
+      Formulary.load_formula(name, path, contents, namespace, flags:, ignore_errors:, from_metadata: @from_metadata)
     end
   end
 
@@ -1113,6 +1128,7 @@ module Formulary
       force_bottle:  T::Boolean,
       flags:         T::Array[String],
       ignore_errors: T::Boolean,
+      from_metadata: T::Boolean,
     ).returns(Formula)
   }
   def self.from_contents(
@@ -1124,9 +1140,10 @@ module Formulary
     tap: nil,
     force_bottle: false,
     flags: [],
-    ignore_errors: false
+    ignore_errors: false,
+    from_metadata: false
   )
-    FormulaContentsLoader.new(name, path, contents, tap:)
+    FormulaContentsLoader.new(name, path, contents, tap:, from_metadata:)
                          .get_formula(spec, alias_path:, force_bottle:, flags:, ignore_errors:)
   end
 

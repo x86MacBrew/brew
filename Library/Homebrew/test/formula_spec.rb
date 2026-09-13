@@ -3830,6 +3830,25 @@ RSpec.describe Formula do
       expect(f.common_sandbox_env(mktmpdir)[:BUNDLE_COOLDOWN]).to eq("1")
     end
 
+    it "uses the phase home and Homebrew temporary directory" do
+      home = mktmpdir
+
+      expect(f.common_sandbox_env(home)).to include(
+        HOME:          home.to_s,
+        TMPDIR:        HOMEBREW_TEMP.to_s,
+        TEMP:          HOMEBREW_TEMP.to_s,
+        TMP:           HOMEBREW_TEMP.to_s,
+        _JAVA_OPTIONS: "-Duser.home=#{Homebrew::PackageManagerCache.path("java_cache")} " \
+                       "-Djava.io.tmpdir=#{HOMEBREW_TEMP}",
+      )
+    end
+
+    it "sets the Java temporary directory without cache options" do
+      allow(Homebrew::PackageManagerCache).to receive(:env).and_return({})
+
+      expect(f.common_sandbox_env(mktmpdir)[:_JAVA_OPTIONS]).to eq("-Djava.io.tmpdir=#{HOMEBREW_TEMP}")
+    end
+
     it "does not configure Cargo cooldown before stable support" do
       expect(f.common_sandbox_env(mktmpdir).keys & [
         :CARGO_REGISTRY_GLOBAL_MIN_PUBLISH_AGE,

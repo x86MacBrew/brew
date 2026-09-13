@@ -1499,6 +1499,11 @@ brew search --fink foo
 
 If in your local Homebrew build of your new formula, you see `Operation not permitted` errors, this will be because your new formula tried to write to the disk outside of your sandbox area. This is enforced on macOS by `sandbox-exec`.
 
+Each sandboxed command receives a private temporary directory under the configured `HOMEBREW_TEMP`, exposed through `TMPDIR`, `TEMP` and `TMP`.
+On macOS, the sandbox allows Unix socket connections within this directory, including when network access is disabled, so tools such as MSBuild can communicate with their task hosts.
+macOS limits Unix socket paths to 104 bytes; C clients that terminate the path get 103 bytes, and libassuan allows only 102 bytes.
+Connections to other Unix sockets remain restricted.
+
 ### Fortran
 
 Some software requires a Fortran compiler. This can be declared by adding `depends_on "gcc"` to a formula.

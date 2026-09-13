@@ -89,6 +89,7 @@ module Cask
         tap:                      T.nilable(Tap),
         loaded_from_api:          T::Boolean,
         loaded_from_internal_api: T::Boolean,
+        loaded_from_metadata:     T::Boolean,
         api_source:               T.nilable(T::Hash[String, T.untyped]),
         config:                   T.nilable(Config),
         allow_reassignment:       T::Boolean,
@@ -97,8 +98,8 @@ module Cask
       ).void
     }
     def initialize(token, sourcefile_path: nil, source: nil, tap: nil, loaded_from_api: false,
-                   loaded_from_internal_api: false, api_source: nil, config: nil, allow_reassignment: false,
-                   loader: nil, &block)
+                   loaded_from_internal_api: false, loaded_from_metadata: false, api_source: nil, config: nil,
+                   allow_reassignment: false, loader: nil, &block)
       @token = token
       @sourcefile_path = sourcefile_path
       @source = source
@@ -106,6 +107,7 @@ module Cask
       @allow_reassignment = allow_reassignment
       @loaded_from_api = loaded_from_api
       @loaded_from_internal_api = loaded_from_internal_api
+      @loaded_from_metadata = loaded_from_metadata
       @api_source = api_source
       @language_evaluator = T.let(nil, T.nilable(T.proc.params(languages: T::Array[String]).returns(T.nilable(String))))
       @loader = loader
@@ -131,6 +133,10 @@ module Cask
 
     sig { returns(T::Boolean) }
     def loaded_from_internal_api? = @loaded_from_internal_api
+
+    # Whether this cask was loaded from installed metadata.
+    sig { returns(T::Boolean) }
+    def loaded_from_metadata? = @loaded_from_metadata
 
     sig { returns(T.any(String, Pathname)) }
     def reloadable_ref

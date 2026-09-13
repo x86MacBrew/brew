@@ -55,34 +55,6 @@ module Homebrew
                              !Homebrew::EnvConfig.no_install_from_api?)
       end
 
-      sig { params(block: T.proc.returns(T.anything)).returns(T.untyped) }
-      def exchange_uid_if_needed!(&block)
-        euid = Process.euid
-        uid = Process.uid
-        return yield if euid == uid
-
-        old_euid = euid
-        process_reexchangeable = Process::UID.re_exchangeable?
-        if process_reexchangeable
-          Process::UID.re_exchange
-        else
-          Process::Sys.seteuid(uid)
-        end
-
-        passwd = Etc.getpwuid(uid)
-        raise "Could not find the home directory for UID #{uid}" if passwd.nil?
-
-        return_value = with_env("HOME" => passwd.dir, &block)
-
-        if process_reexchangeable
-          Process::UID.re_exchange
-        else
-          Process::Sys.seteuid(old_euid)
-        end
-
-        return_value
-      end
-
       sig { params(formula_name: String).returns(T.nilable(String)) }
       def formula_versions_from_env(formula_name)
         @formula_versions_from_env ||= begin

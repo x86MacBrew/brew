@@ -126,32 +126,6 @@ RSpec.describe Homebrew::Bundle::VscodeExtension do
 
           expect(described_class.install_batch!(entries, verbose: false)).to be(true)
         end
-
-        it "installs extension when euid != uid and Process::UID.re_exchangeable? returns true" do
-          allow(Process).to receive(:uid).and_return(0)
-          allow(Etc).to receive(:getpwuid).with(0).and_return(double(dir: "/root"))
-          expect(Process).to receive(:euid).and_return(1).once
-          expect(Process::UID).to receive(:re_exchangeable?).and_return(true).once
-          expect(Process::UID).to receive(:re_exchange).twice
-
-          expect(Homebrew::Bundle).to \
-            receive(:system).with(Pathname("code"), "--install-extension", "foo", verbose: false).and_return(true)
-          expect(described_class.preinstall!("foo")).to be(true)
-          expect(described_class.install!("foo")).to be(true)
-        end
-
-        it "installs extension when euid != uid and Process::UID.re_exchangeable? returns false" do
-          allow(Process).to receive(:uid).and_return(0)
-          allow(Etc).to receive(:getpwuid).with(0).and_return(double(dir: "/root"))
-          expect(Process).to receive(:euid).and_return(1).once
-          expect(Process::UID).to receive(:re_exchangeable?).and_return(false).once
-          expect(Process::Sys).to receive(:seteuid).twice
-
-          expect(Homebrew::Bundle).to \
-            receive(:system).with(Pathname("code"), "--install-extension", "foo", verbose: false).and_return(true)
-          expect(described_class.preinstall!("foo")).to be(true)
-          expect(described_class.install!("foo")).to be(true)
-        end
       end
     end
   end

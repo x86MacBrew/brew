@@ -6,6 +6,7 @@ require "io/console"
 require "pty"
 require "tempfile"
 require "exceptions"
+require "mktemp"
 require "utils/fork"
 require "utils/output"
 
@@ -140,14 +141,16 @@ class Sandbox
       args:                 T.any(String, Pathname),
       step:                 String,
       warn_without_sandbox: T::Boolean,
+      retain_tmp:           T::Boolean,
+      debug:                T::Boolean,
       _block:               T.proc.params(sandbox: Sandbox).void,
     ).void
   }
-  def self.run_or_fork(*args, step:, warn_without_sandbox: true, &_block)
+  def self.run_or_fork(*args, step:, warn_without_sandbox: true, retain_tmp: false, debug: false, &_block)
     if use_for?(step, warn_without_sandbox:)
       sandbox = new
       yield sandbox
-      sandbox.run(*args)
+      sandbox.run(*args, retain_tmp:, debug:)
     else
       Utils.safe_fork { exec(*args) }
     end
@@ -234,7 +237,7 @@ class Sandbox
     executable_path = Pathname.new(executable_name)
     return PATH.new(executable_path.dirname) if executable_path.absolute?
 
-    PATH.new(ORIGINAL_PATHS, ENV.fetch("PATH"), HOMEBREW_ORIGINAL_BREW_FILE.dirname)
+    PATH.new(ORIGINAL_PATHS, ENV.fetch("PATH"), HOMEBREW_BREW_FILE.dirname)
   end
 
   sig { returns(T.nilable(Pathname)) }
@@ -538,7 +541,7 @@ class Sandbox
 
   sig { void }
   def deny_write_homebrew_repository
-    deny_write path: HOMEBREW_ORIGINAL_BREW_FILE
+    deny_write path: HOMEBREW_BREW_FILE
     if HOMEBREW_PREFIX.to_s == HOMEBREW_REPOSITORY.to_s
       deny_write_path HOMEBREW_LIBRARY
       deny_write_path HOMEBREW_REPOSITORY/".git"
@@ -562,15 +565,23 @@ class Sandbox
       args:                  T.any(String, Pathname),
       passthrough_stdin:     T::Boolean,
       child_message_handler: T.nilable(T.proc.params(message: String).returns(T.nilable(String))),
+      retain_tmp:            T::Boolean,
+      debug:                 T::Boolean,
     ).void
   }
-  def run(*args, passthrough_stdin: true, child_message_handler: nil)
-    Dir.mktmpdir("homebrew-sandbox", HOMEBREW_TEMP) do |tmpdir|
-      allow_network path: File.join(tmpdir, "socket"), type: :literal if allow_network_for_error_pipe?
+  def run(*args, passthrough_stdin: true, child_message_handler: nil, retain_tmp: false, debug: false)
+    Mktemp.new("sandbox", retain: retain_tmp, compact: true).run(chdir: false) do |staging|
+      temporary = staging.tmpdir
+      raise "Sandbox temporary directory is unexpectedly unset." if temporary.nil?
+
+      tmpdir = temporary.to_s
+      allow_write_path(tmpdir)
+      allow_network path: tmpdir, type: :subpath
       @start = T.let(Time.now, T.nilable(Time))
 
       begin
         command = sandbox_command(args, tmpdir)
+        env = { "HOMEBREW_TEMP" => tmpdir, "TMPDIR" => tmpdir, "TEMP" => tmpdir, "TMP" => tmpdir }
         # Start sandbox in a pseudoterminal to prevent access of the parent terminal.
         PTY.open do |controller, worker|
           # Set the PTY's window size to match the parent terminal.
@@ -622,7 +633,7 @@ class Sandbox
 
                 worker.close_on_exec = true
                 apply_sandbox
-                exec(*command, in: worker, out: worker, err: worker) # And map everything to the PTY.
+                exec(env, *command, in: worker, out: worker, err: worker) # And map everything to the PTY.
               else
                 # Parent side
                 worker.close
@@ -668,7 +679,9 @@ class Sandbox
             write_to_pty.call
           end
         end
-      rescue
+      # Preserve temporary files for debugging, including interrupted commands.
+      rescue StandardError, SignalException
+        staging.retain! if debug
         @failed = true
         raise
       ensure
@@ -724,11 +737,6 @@ class Sandbox
   sig { params(_args: T::Array[T.any(String, Pathname)], _tmpdir: String).returns(T::Array[T.any(String, Pathname)]) }
   def sandbox_command(_args, _tmpdir)
     raise NotImplementedError, "Sandbox is not implemented for this OS."
-  end
-
-  sig { returns(T::Boolean) }
-  def allow_network_for_error_pipe?
-    false
   end
 
   sig { void }
