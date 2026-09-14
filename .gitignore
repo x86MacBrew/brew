@@ -207,6 +207,8 @@
 !/Dockerfile.test.yml
 !/LICENSE.txt
 !/README.md
+!/install-x86macbrew.sh
+!/tag-x86macbrew-release.sh
 
 # Unignore tests' bundle config
 !/Library/Homebrew/test/.bundle/config

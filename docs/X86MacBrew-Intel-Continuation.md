@@ -46,22 +46,49 @@ its checksum and points a fresh Intel macOS installation at the x86MacBrew
 client remote. It defaults to `--dry-run` and refuses to overwrite an existing
 `/usr/local/Homebrew` checkout.
 
+The pinned installer checks out the newest release tag, and only after it has
+created `/usr/local/Homebrew`, so the script checks that tag first. It refuses
+when there is no release tag or when the newest tag is not an x86MacBrew
+release, before anything on the host changes.
+
 The actual `--experimental-install` path has not yet passed a clean-host
 installation test. It is not the published migration path and must not be
 presented as a production installer until that evidence exists.
 
-## Default branch is part of the update contract
+## How `brew update` chooses a revision
 
-Homebrew's updater follows `refs/remotes/origin/HEAD`, which GitHub sets from
-the repository's default branch. Therefore, once this baseline has been
-reviewed and merged, the `x86MacBrew/brew` GitHub default branch **must** be
-`x86macbrew-intel-2027`, not `main`.
+For non-developer users, `brew update` sets `HOMEBREW_UPDATE_TO_TAG` and moves
+to the newest tag matching `X.Y.Z`. It follows `refs/remotes/origin/HEAD` only
+when no such tag exists. The pinned Homebrew installer also checks out the
+newest tag and aborts when there is none.
 
-`main` remains the reviewed upstream-tracking branch. Making it the GitHub
-default would cause a normal `brew update` in a cloned Intel client to check
-out `main` and abandon the maintained Intel branch. A disposable public-clone
-test on 2026-09-11 verified that setting `origin/HEAD` to the maintained branch
-preserves that branch across `brew update`.
+The GitHub default branch must still be `x86macbrew-intel-2027`, which covers
+clones that have no release tag. Once release tags exist, they decide what
+normal users receive.
+
+## Release tags
+
+x86MacBrew releases are tagged `YYYY.M.PATCH` on `x86macbrew-intel-2027`, for
+example `2026.9.0`.
+
+- The version sorts above every upstream Homebrew version, so if upstream tags
+  ever reach this fork, `brew update` and the installer still select the
+  x86MacBrew release.
+- It is a plain `X.Y.Z` tag, because `brew update` ignores tags with a fourth
+  component.
+- `brew --version` reports it, for example `Homebrew 2026.9.0`.
+
+Create a release with `./tag-x86macbrew-release.sh`. It tags
+`origin/x86macbrew-intel-2027` locally and prints the command to push it. It
+refuses a commit that is already released or is not on the Intel line, and it
+never pushes.
+
+`.github/workflows/x86macbrew-tag-guard.yml` runs the script with `--verify` on
+every tag push, every push to `x86macbrew-intel-2027` and once a day. It fails
+if any tag on this fork is not a `YYYY.M.PATCH` release on the Intel line.
+
+Never run `git push --tags` from a clone that also fetches `Homebrew/brew`. It
+would publish upstream's tags to this fork.
 
 ## Branch roles
 
