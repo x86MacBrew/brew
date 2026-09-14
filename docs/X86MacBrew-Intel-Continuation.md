@@ -39,6 +39,17 @@ baseline.
 This is a compatibility baseline, not a promise that every formula, cask, or
 future macOS version is supported.
 
+## Experimental bootstrap prototype
+
+`install-x86macbrew.sh` pins a reviewed `Homebrew/install` revision, verifies
+its checksum and points a fresh Intel macOS installation at the x86MacBrew
+client remote. It defaults to `--dry-run` and refuses to overwrite an existing
+`/usr/local/Homebrew` checkout.
+
+The actual `--experimental-install` path has not yet passed a clean-host
+installation test. It is not the published migration path and must not be
+presented as a production installer until that evidence exists.
+
 ## Default branch is part of the update contract
 
 Homebrew's updater follows `refs/remotes/origin/HEAD`, which GitHub sets from
