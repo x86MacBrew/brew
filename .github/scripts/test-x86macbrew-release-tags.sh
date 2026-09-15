@@ -10,6 +10,11 @@ export GIT_AUTHOR_NAME=Test GIT_COMMITTER_NAME=Test
 export GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_EMAIL=test@example.invalid
 git init --quiet --bare "${fixture}/origin.git"
 git init --quiet "${fixture}/seed"
+git -C "${fixture}/seed" config user.name Test
+git -C "${fixture}/seed" config user.email test@example.invalid
+git -C "${fixture}/seed" config commit.gpgSign false
+git -C "${fixture}/seed" config tag.gpgSign false
+git -C "${fixture}/seed" config protocol.file.allow always
 cd "${fixture}/seed"
 git checkout --quiet -b x86macbrew-intel-2027
 mkdir docs

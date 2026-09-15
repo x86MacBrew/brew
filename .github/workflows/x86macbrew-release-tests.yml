@@ -5,6 +5,7 @@ on:
     paths:
       - tag-x86macbrew-release.sh
       - .github/scripts/test-x86macbrew-release-tags.sh
+      - .github/scripts/test-x86macbrew-installer-preflight.sh
       - .github/workflows/x86macbrew-release-tests.yml
   push:
     branches: [x86macbrew-intel-2027]
@@ -20,4 +21,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: bash .github/scripts/test-x86macbrew-release-tags.sh
+      - run: |
+          bash .github/scripts/test-x86macbrew-release-tags.sh
+          bash .github/scripts/test-x86macbrew-installer-preflight.sh
