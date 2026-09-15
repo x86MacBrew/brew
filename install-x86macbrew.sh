@@ -61,7 +61,7 @@ printf 'installer SHA-256:   %s\n' "${INSTALLER_SHA256}"
 
 # The pinned installer checks out the newest tag, not the default branch, and
 # only after creating /usr/local/Homebrew. Check that tag before the host changes.
-preflight="$(mktemp -d -t x86macbrew-preflight)"
+preflight="$(mktemp -d "${TMPDIR:-/tmp}/x86macbrew-preflight.XXXXXX")"
 installer=""
 trap 'rm -rf "${preflight}" ${installer:+"${installer}"}' EXIT HUP INT TERM
 
@@ -121,7 +121,7 @@ case "${tag_state}" in
     ;;
 esac
 
-installer="$(mktemp -t x86macbrew-install)"
+installer="$(mktemp "${TMPDIR:-/tmp}/x86macbrew-install.XXXXXX")"
 
 curl --fail --location --proto '=https' --tlsv1.2 --output "${installer}" "${INSTALLER_URL}"
 actual_sha="$(shasum -a 256 "${installer}" | awk '{print $1}')"
