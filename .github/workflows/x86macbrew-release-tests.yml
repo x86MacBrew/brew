@@ -1,0 +1,23 @@
+name: x86MacBrew release tooling tests
+
+on:
+  pull_request:
+    paths:
+      - tag-x86macbrew-release.sh
+      - .github/scripts/test-x86macbrew-release-tags.sh
+      - .github/workflows/x86macbrew-release-tests.yml
+  push:
+    branches: [x86macbrew-intel-2027]
+
+permissions:
+  contents: read
+
+jobs:
+  release-tags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash .github/scripts/test-x86macbrew-release-tags.sh

@@ -111,6 +111,16 @@ do
     fail "origin has tag ${tag}, which is not an x86MacBrew release; delete it first"
     exit 1
   fi
+  if ! on_intel_line "${ORIGIN_TAGS}/${tag}"
+  then
+    fail "${tag} is not an x86MacBrew commit on ${INTEL_BRANCH}"
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "${ORIGIN_TAGS}/${tag}" "${commit}"
+  then
+    fail "${short_commit} would roll back release ${tag}; release a descendant instead"
+    exit 1
+  fi
   [[ "$(git rev-parse "${ORIGIN_TAGS}/${tag}^{commit}")" == "${commit}" ]] && released_as="${tag}"
 done <<<"${origin_tags}"
 
