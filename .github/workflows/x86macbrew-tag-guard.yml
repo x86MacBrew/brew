@@ -1,0 +1,29 @@
+name: x86MacBrew tag guard
+
+# brew update follows the newest version tag for non-developer users, and the
+# pinned installer checks out the newest tag. A tag that is not an x86MacBrew
+# release on the Intel line (for example upstream Homebrew's tags reaching this
+# fork) would put users on code this project does not maintain.
+
+on:
+  push:
+    tags: ["**"]
+    branches: [x86macbrew-intel-2027]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    if: github.repository == 'x86MacBrew/brew'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Every tag on origin is an x86MacBrew release on the Intel line
+        run: ./tag-x86macbrew-release.sh --verify
