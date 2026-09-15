@@ -6,6 +6,7 @@ set -euo pipefail
 
 readonly CLIENT_REMOTE="https://github.com/x86MacBrew/brew.git"
 readonly EXPECTED_BRANCH="x86macbrew-intel-2027"
+readonly RELEASE_TAG_PATTERN='^20[0-9][0-9]\.(1[0-2]|[1-9])\.[0-9]+$'
 readonly INSTALLER_COMMIT="8949852f785a3bacaba2a979d0790337950b0a4a"
 readonly INSTALLER_SHA256="25548e1da7930c1563dbbe2cb05834a4131c4da09234540b6fdac812fda3c287"
 readonly INSTALLER_URL="https://raw.githubusercontent.com/Homebrew/install/${INSTALLER_COMMIT}/install.sh"
@@ -78,9 +79,13 @@ then
   printf 'release tag:         none published\n'
 else
   git -C "${preflight}" init --quiet
-  git -C "${preflight}" fetch --quiet --depth 1 "${CLIENT_REMOTE}" \
+  git -C "${preflight}" fetch --quiet --filter=blob:none "${CLIENT_REMOTE}" \
+    "refs/heads/${EXPECTED_BRANCH}:refs/remotes/origin/${EXPECTED_BRANCH}" \
     "refs/tags/${latest_tag}:refs/tags/${latest_tag}"
-  if git -C "${preflight}" cat-file -e "${latest_tag}:${INTEL_LINE_MARKER}" 2>/dev/null
+  if [[ "${latest_tag}" =~ ${RELEASE_TAG_PATTERN} ]] &&
+     git -C "${preflight}" merge-base --is-ancestor "${latest_tag}" \
+     "refs/remotes/origin/${EXPECTED_BRANCH}" &>/dev/null &&
+     git -C "${preflight}" cat-file -e "${latest_tag}:${INTEL_LINE_MARKER}" &>/dev/null
   then
     tag_state="intel-line"
     printf 'release tag:         %s\n' "${latest_tag}"
