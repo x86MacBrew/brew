@@ -1,0 +1,62 @@
+name: x86MacBrew syntax
+
+# Upstream's `CI` workflow only runs when the repository owner is Homebrew, so
+# none of its checks run on this fork. This restores its `syntax` job.
+
+on:
+  push:
+    branches: [x86macbrew-intel-2027]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_DEVELOPER: 1
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_SORBET_RECURSIVE: 1
+  HOMEBREW_VERIFY_ATTESTATIONS: 1
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+concurrency:
+  group: "x86macbrew-syntax-${{ github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  syntax:
+    if: github.repository == 'x86MacBrew/brew'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f # 2026.09.07.1
+        with:
+          core: false
+          cask: false
+
+      - name: Cache Bundler RubyGems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: ${{ runner.os }}-rubygems-x86macbrew-syntax-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: ${{ runner.os }}-rubygems-x86macbrew-syntax-
+
+      - name: Install Bundler RubyGems
+        run: brew install-bundler-gems --groups=style,typecheck
+
+      - name: Install actionlint, shellcheck and shfmt
+        run: brew install actionlint shellcheck shfmt
+
+      - run: brew style
+
+      # `brew style` with no arguments skips shell scripts at the repository root.
+      - name: Style x86MacBrew root scripts
+        run: brew style install-x86macbrew.sh tag-x86macbrew-release.sh
+
+      - run: brew typecheck
