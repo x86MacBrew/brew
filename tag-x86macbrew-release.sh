@@ -7,6 +7,7 @@ set -euo pipefail
 readonly INTEL_BRANCH="x86macbrew-intel-2027"
 readonly INTEL_LINE_MARKER="docs/X86MacBrew-Intel-Continuation.md"
 readonly RELEASE_TAG_PATTERN='^20[0-9][0-9]\.(1[0-2]|[1-9])\.[0-9]+$'
+readonly LEGACY_LIGHTWEIGHT_RELEASE_TAG="2026.9.0"
 # Local clones also hold upstream Homebrew tags in refs/tags, so keep the
 # fork's own tags apart from them.
 readonly ORIGIN_TAGS="refs/x86macbrew-origin-tags"
@@ -55,6 +56,11 @@ is_release_tag() {
   [[ "$1" =~ ${RELEASE_TAG_PATTERN} ]]
 }
 
+is_annotated_release_tag() {
+  [[ "${1##*/}" == "${LEGACY_LIGHTWEIGHT_RELEASE_TAG}" ]] ||
+    [[ "$(git cat-file -t "$1")" == "tag" ]]
+}
+
 on_intel_line() {
   git merge-base --is-ancestor "$1" "refs/remotes/origin/${INTEL_BRANCH}" &>/dev/null &&
     git cat-file -e "$1:${INTEL_LINE_MARKER}" &>/dev/null
@@ -73,6 +79,10 @@ then
     if ! is_release_tag "${tag}"
     then
       fail "${tag} is not a YYYY.M.PATCH release tag"
+      invalid=$((invalid + 1))
+    elif ! is_annotated_release_tag "${ORIGIN_TAGS}/${tag}"
+    then
+      fail "${tag} must be an annotated tag"
       invalid=$((invalid + 1))
     elif ! on_intel_line "${ORIGIN_TAGS}/${tag}"
     then
@@ -109,6 +119,11 @@ do
   if ! is_release_tag "${tag}"
   then
     fail "origin has tag ${tag}, which is not an x86MacBrew release; delete it first"
+    exit 1
+  fi
+  if ! is_annotated_release_tag "${ORIGIN_TAGS}/${tag}"
+  then
+    fail "${tag} must be an annotated tag"
     exit 1
   fi
   if ! on_intel_line "${ORIGIN_TAGS}/${tag}"

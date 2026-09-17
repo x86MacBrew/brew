@@ -41,16 +41,34 @@ expect_failure() {
 /bin/bash "${release_script}" --verify
 /bin/bash "${release_script}" --dry-run
 test -z "$(git tag --list)"
+
+# The first public release was created through GitHub's release form. Keep
+# that immutable lightweight tag valid while requiring annotations afterwards.
+git tag 2026.9.0
+git push --quiet origin refs/tags/2026.9.0
+/bin/bash "${release_script}" --verify
+git push --quiet origin :refs/tags/2026.9.0
+git tag -d 2026.9.0 >/dev/null
+
+# A lightweight release tag on the Intel line must be rejected.
+git tag 2020.1.0
+git push --quiet origin refs/tags/2020.1.0
+expect_failure 'must be an annotated tag' --verify
+expect_failure 'must be an annotated tag' --dry-run
+git push --quiet origin :refs/tags/2020.1.0
+git tag -d 2020.1.0 >/dev/null
+
+# An annotated tag off the Intel line must still be rejected.
 git checkout --quiet --orphan unrelated
 git commit --quiet -m unrelated
-git tag 2020.1.0
+git tag --annotate 2020.1.0 --message unrelated
 git push --quiet origin refs/tags/2020.1.0
 git checkout --quiet x86macbrew-intel-2027
 expect_failure 'not an x86MacBrew commit on' --verify
 expect_failure 'not an x86MacBrew commit on' --dry-run
 git push --quiet origin :refs/tags/2020.1.0
 git tag -d 2020.1.0 >/dev/null
-git tag 2020.1.0
+git tag --annotate 2020.1.0 --message release
 git push --quiet origin refs/tags/2020.1.0
 expect_failure 'would roll back release' --dry-run "${first_commit}"
 expect_failure 'already released as' --dry-run
@@ -59,4 +77,4 @@ git commit --quiet -am newer
 git push --quiet origin x86macbrew-intel-2027
 /bin/bash "${release_script}" --dry-run
 test "$(git tag --list | wc -l | tr -d ' ')" = 1
-echo 'PASS: release tag ancestry, rollback and dry-run checks'
+echo 'PASS: release tag annotation, ancestry, rollback and dry-run checks'

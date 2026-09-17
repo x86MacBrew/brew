@@ -83,6 +83,10 @@ Create a release with `./tag-x86macbrew-release.sh`. It tags
 refuses a commit that is already released or is not on the Intel line, and it
 never pushes.
 
+Release tags must be annotated. `2026.9.0` is a fixed legacy exception because
+the GitHub release form created it as a lightweight tag; do not rewrite that
+published tag.
+
 `.github/workflows/x86macbrew-tag-guard.yml` runs the script with `--verify` on
 every tag push, every push to `x86macbrew-intel-2027` and once a day. It fails
 if any tag on this fork is not a `YYYY.M.PATCH` release on the Intel line.
