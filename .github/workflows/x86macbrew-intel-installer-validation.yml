@@ -1,0 +1,201 @@
+name: x86MacBrew Intel installer validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_ANALYTICS: "1"
+  HOMEBREW_NO_ENV_HINTS: "1"
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  validate-installer:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - name: Check out the Intel client revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the dispatched Intel client revision
+        run: |
+          test "$GITHUB_REF" = "refs/heads/x86macbrew-intel-2027"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Create evidence directory
+        run: |
+          evidence_dir="$RUNNER_TEMP/x86macbrew-intel-installer-evidence"
+          mkdir -p "$evidence_dir"
+          echo "EVIDENCE_DIR=$evidence_dir" >>"$GITHUB_ENV"
+
+      - name: Run release-tag tests
+        run: |
+          bash .github/scripts/test-x86macbrew-release-tags.sh \
+            2>&1 | tee "$EVIDENCE_DIR/release-tag-tests.log"
+
+      - name: Run installer preflight tests
+        run: |
+          bash .github/scripts/test-x86macbrew-installer-preflight.sh \
+            2>&1 | tee "$EVIDENCE_DIR/installer-preflight-tests.log"
+
+      - name: Create a local client mirror and temporary release tag
+        run: |
+          branch="x86macbrew-intel-2027"
+          local_mirror="$RUNNER_TEMP/x86macbrew-client-mirror.git"
+          local_mirror_url="file://$local_mirror"
+          month="$(date -u +%m)"
+          temporary_tag="$(date -u +%Y).${month#0}.${GITHUB_RUN_ID}"
+
+          git init --bare --quiet "$local_mirror"
+          git -C "$local_mirror" -c protocol.file.allow=always fetch --quiet \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA:refs/heads/$branch"
+          git -C "$local_mirror" symbolic-ref HEAD "refs/heads/$branch"
+          git -C "$local_mirror" \
+            -c user.name='x86MacBrew validation' \
+            -c user.email='validation@invalid' \
+            tag --annotate "$temporary_tag" "$GITHUB_SHA" \
+            --message "Temporary validation tag; local mirror only."
+
+          test "$(git -C "$local_mirror" cat-file -t "$temporary_tag")" = tag
+          test "$(git -C "$local_mirror" rev-parse "$temporary_tag^{commit}")" = \
+            "$GITHUB_SHA"
+          git -C "$local_mirror" show-ref --head >"$EVIDENCE_DIR/local-mirror-refs.txt"
+          git -C "$local_mirror" log -1 --decorate --oneline "$temporary_tag" \
+            >"$EVIDENCE_DIR/local-mirror-tag.txt"
+
+          installer_copy="$RUNNER_TEMP/install-x86macbrew-local-mirror.sh"
+          cp install-x86macbrew.sh "$installer_copy"
+          LOCAL_MIRROR_URL="$local_mirror_url" perl -0pi -e \
+            's{https://github\.com/x86MacBrew/brew\.git}{$ENV{LOCAL_MIRROR_URL}}g' \
+            "$installer_copy"
+          chmod +x "$installer_copy"
+          test "$(grep -Fc 'https://github.com/x86MacBrew/brew.git' "$installer_copy")" = 0
+          grep -F "readonly CLIENT_REMOTE=\"$local_mirror_url\"" "$installer_copy" \
+            >"$EVIDENCE_DIR/installer-remote.txt"
+
+          {
+            printf 'LOCAL_MIRROR=%s\n' "$local_mirror"
+            printf 'LOCAL_MIRROR_URL=%s\n' "$local_mirror_url"
+            printf 'LOCAL_INSTALLER=%s\n' "$installer_copy"
+          } >>"$GITHUB_ENV"
+
+      - name: Verify the GitHub-hosted Intel macOS runner
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          test -d /usr/local/Homebrew
+          test -L /usr/local/bin/brew
+          sudo -n true
+          {
+            printf 'runner_environment=%s\n' "$RUNNER_ENVIRONMENT"
+            uname -a
+            sw_vers
+            ls -ld /usr/local/Homebrew
+            ls -l /usr/local/bin/brew
+          } >"$EVIDENCE_DIR/runner-contract.txt"
+
+      - name: Move the preinstalled checkout aside
+        run: |
+          preinstalled_homebrew="$RUNNER_TEMP/preinstalled-Homebrew"
+          preinstalled_brew_link="$RUNNER_TEMP/preinstalled-brew-link"
+
+          test ! -e "$preinstalled_homebrew"
+          test ! -e "$preinstalled_brew_link"
+          sudo mv /usr/local/Homebrew "$preinstalled_homebrew"
+          sudo mv /usr/local/bin/brew "$preinstalled_brew_link"
+          test ! -e /usr/local/Homebrew
+          test ! -e /usr/local/bin/brew
+
+          printf 'PREINSTALLED_HOMEBREW=%s\n' "$preinstalled_homebrew" >>"$GITHUB_ENV"
+          printf 'PREINSTALLED_BREW_LINK=%s\n' "$preinstalled_brew_link" >>"$GITHUB_ENV"
+
+      - name: Run the experimental installer against the local mirror
+        run: |
+          NONINTERACTIVE=1 CI=1 /bin/bash "$LOCAL_INSTALLER" --experimental-install \
+            2>&1 | tee "$EVIDENCE_DIR/experimental-installer.log"
+
+      - name: Verify the installed x86MacBrew client
+        run: |
+          brew=/usr/local/bin/brew
+          repository=/usr/local/Homebrew
+          marker=docs/X86MacBrew-Intel-Continuation.md
+
+          test -x "$brew"
+          test "$(git -C "$repository" remote get-url origin)" = "$LOCAL_MIRROR_URL"
+          test "$(git -C "$repository" symbolic-ref --short refs/remotes/origin/HEAD)" = \
+            origin/x86macbrew-intel-2027
+          test "$("$brew" --prefix)" = /usr/local
+          test -f "$repository/$marker"
+          {
+            git -C "$repository" remote -v
+            git -C "$repository" symbolic-ref --short refs/remotes/origin/HEAD
+            "$brew" --prefix
+            git -C "$repository" log -1 --decorate --oneline
+          } >"$EVIDENCE_DIR/installed-client-assertions.txt"
+
+      - name: Update the installed client
+        run: |
+          /usr/local/bin/brew update 2>&1 | tee "$EVIDENCE_DIR/brew-update.log"
+          test "$(git -C /usr/local/Homebrew remote get-url origin)" = \
+            "$LOCAL_MIRROR_URL"
+
+      - name: Install and run x86macbrew-doctor from source
+        run: |
+          brew=/usr/local/bin/brew
+          "$brew" tap x86macbrew/x86mac 2>&1 | tee "$EVIDENCE_DIR/brew-tap.log"
+          "$brew" install --build-from-source x86macbrew/x86mac/x86macbrew-doctor \
+            2>&1 | tee "$EVIDENCE_DIR/brew-install-doctor.log"
+          /usr/local/bin/x86macbrew-doctor --json \
+            | tee "$EVIDENCE_DIR/x86macbrew-doctor.json"
+          python3 - "$EVIDENCE_DIR/x86macbrew-doctor.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          if result.get("supported") is not True:
+              raise SystemExit("x86macbrew-doctor did not report supported:true")
+          PY
+
+      - name: Upload installer validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: x86macbrew-intel-installer-validation-${{ github.run_id }}
+          path: ${{ runner.temp }}/x86macbrew-intel-installer-evidence
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Restore the preinstalled Homebrew checkout
+        if: always()
+        run: |
+          installed_homebrew="$RUNNER_TEMP/x86macbrew-validation-installed-Homebrew"
+          installed_brew_link="$RUNNER_TEMP/x86macbrew-validation-brew-link"
+
+          if [[ -d /usr/local/Homebrew ]]
+          then
+            sudo mv /usr/local/Homebrew "$installed_homebrew"
+          fi
+          if [[ -e /usr/local/bin/brew || -L /usr/local/bin/brew ]]
+          then
+            sudo mv /usr/local/bin/brew "$installed_brew_link"
+          fi
+          if [[ -d "${PREINSTALLED_HOMEBREW:-}" ]]
+          then
+            sudo mv "$PREINSTALLED_HOMEBREW" /usr/local/Homebrew
+          fi
+          if [[ -e "${PREINSTALLED_BREW_LINK:-}" || -L "${PREINSTALLED_BREW_LINK:-}" ]]
+          then
+            sudo mv "$PREINSTALLED_BREW_LINK" /usr/local/bin/brew
+          fi
