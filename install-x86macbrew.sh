@@ -1,17 +1,14 @@
 #!/bin/bash
-# Bootstrap the x86MacBrew client fork on a fresh Intel macOS installation.
-# This remains opt-in until a clean-host installation test has passed.
+# Bootstrap the x86MacBrew client on a fresh Intel macOS installation.
 
 set -euo pipefail
 
 readonly CLIENT_REMOTE="https://github.com/x86MacBrew/brew.git"
 readonly EXPECTED_BRANCH="x86macbrew-intel-2027"
 readonly RELEASE_TAG_PATTERN='^20[0-9][0-9]\.(1[0-2]|[1-9])\.[0-9]+$'
-readonly INSTALLER_COMMIT="8949852f785a3bacaba2a979d0790337950b0a4a"
-readonly INSTALLER_SHA256="25548e1da7930c1563dbbe2cb05834a4131c4da09234540b6fdac812fda3c287"
-readonly INSTALLER_URL="https://raw.githubusercontent.com/Homebrew/install/${INSTALLER_COMMIT}/install.sh"
 readonly PREFIX="/usr/local"
 readonly REPOSITORY="${PREFIX}/Homebrew"
+readonly BREW_LINK="${PREFIX}/bin/brew"
 readonly INTEL_LINE_MARKER="docs/X86MacBrew-Intel-Continuation.md"
 
 usage() {
@@ -19,10 +16,10 @@ usage() {
     'usage: install-x86macbrew.sh [--dry-run | --experimental-install]' \
     '' \
     '--dry-run               Print the verified bootstrap plan without changing the host.' \
-    '--experimental-install  Run the pinned upstream installer against the x86MacBrew' \
-    '                        client remote on a fresh Intel macOS host only.' \
+    '--experimental-install  Install the verified x86MacBrew client release on a' \
+    '                        fresh Intel macOS host only.' \
     '' \
-    'The installer refuses to overwrite an existing /usr/local/Homebrew checkout.'
+    'The installer refuses to overwrite an existing Homebrew checkout or brew link.'
 }
 
 mode="dry-run"
@@ -45,9 +42,10 @@ then
   exit 1
 fi
 
-if [[ -e "${REPOSITORY}" && "${mode}" != "dry-run" ]]
+if [[ ( -e "${REPOSITORY}" || -e "${BREW_LINK}" || -L "${BREW_LINK}" ) && \
+      "${mode}" != "dry-run" ]]
 then
-  echo "Refusing to overwrite existing Homebrew checkout: ${REPOSITORY}" >&2
+  echo "Refusing to overwrite existing Homebrew files in ${PREFIX}." >&2
   echo "Use the documented migration path instead of this experimental bootstrap." >&2
   exit 2
 fi
@@ -56,14 +54,12 @@ printf 'x86MacBrew experimental client bootstrap\n\n'
 printf 'client remote:       %s\n' "${CLIENT_REMOTE}"
 printf 'expected branch:     %s\n' "${EXPECTED_BRANCH}"
 printf 'prefix:              %s\n' "${PREFIX}"
-printf 'pinned installer:    %s\n' "${INSTALLER_COMMIT}"
-printf 'installer SHA-256:   %s\n' "${INSTALLER_SHA256}"
+printf 'bootstrap:           x86MacBrew-owned Git bootstrap\n'
 
-# The pinned installer checks out the newest tag, not the default branch, and
-# only after creating /usr/local/Homebrew. Check that tag before the host changes.
+# Homebrew selects the newest release tag after it has created the prefix, so
+# verify that tag before the x86MacBrew bootstrap changes the host.
 preflight="$(mktemp -d "${TMPDIR:-/tmp}/x86macbrew-preflight.XXXXXX")"
-installer=""
-trap 'rm -rf "${preflight}" ${installer:+"${installer}"}' EXIT HUP INT TERM
+trap 'rm -rf "${preflight}"' EXIT HUP INT TERM
 
 if ! remote_tags="$(git ls-remote --tags --refs "${CLIENT_REMOTE}")"
 then
@@ -121,20 +117,54 @@ case "${tag_state}" in
     ;;
 esac
 
-installer="$(mktemp "${TMPDIR:-/tmp}/x86macbrew-install.XXXXXX")"
-
-curl --fail --location --proto '=https' --tlsv1.2 --output "${installer}" "${INSTALLER_URL}"
-actual_sha="$(shasum -a 256 "${installer}" | awk '{print $1}')"
-if [[ "${actual_sha}" != "${INSTALLER_SHA256}" ]]
+if ! /usr/bin/xcode-select -p >/dev/null
 then
-  echo "Pinned Homebrew installer checksum mismatch." >&2
-  echo "expected: ${INSTALLER_SHA256}" >&2
-  echo "actual:   ${actual_sha}" >&2
+  echo "Xcode Command Line Tools are required before bootstrap." >&2
   exit 1
 fi
 
-export HOMEBREW_BREW_GIT_REMOTE="${CLIENT_REMOTE}"
-/bin/bash "${installer}"
+if ! /usr/bin/sudo -v
+then
+  echo "Administrator access is required to create ${PREFIX}." >&2
+  exit 1
+fi
+
+owner="$(/usr/bin/id -un)"
+group="$(/usr/bin/id -gn)"
+prefix_directories=(
+  bin Cellar Caskroom Frameworks etc include lib opt sbin share var
+  var/homebrew var/homebrew/linked var/log
+)
+
+for directory in "${prefix_directories[@]}"
+do
+  /usr/bin/sudo /bin/mkdir -p "${PREFIX}/${directory}"
+  /usr/bin/sudo /usr/sbin/chown "${owner}:${group}" "${PREFIX}/${directory}"
+done
+
+/usr/bin/sudo /bin/mkdir -p "${REPOSITORY}"
+/usr/bin/sudo /usr/sbin/chown "${owner}:${group}" "${REPOSITORY}"
+
+git -C "${REPOSITORY}" init --quiet
+git -C "${REPOSITORY}" config remote.origin.url "${CLIENT_REMOTE}"
+git -C "${REPOSITORY}" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git -C "${REPOSITORY}" config fetch.prune true
+git -C "${REPOSITORY}" config core.autocrlf false
+git -C "${REPOSITORY}" config core.symlinks true
+git -C "${REPOSITORY}" fetch --quiet --force origin
+git -C "${REPOSITORY}" fetch --quiet --force --tags origin
+git -C "${REPOSITORY}" remote set-head origin --auto >/dev/null
+
+installed_tag="$(git -C "${REPOSITORY}" tag --list --sort=-version:refname | head -n 1)"
+if [[ "${installed_tag}" != "${latest_tag}" ]]
+then
+  echo "The available x86MacBrew release changed during bootstrap." >&2
+  echo "Run the installer again to review the new release tag." >&2
+  exit 1
+fi
+
+git -C "${REPOSITORY}" checkout --quiet --force -B stable "${installed_tag}"
+/usr/bin/sudo /bin/ln -s "../Homebrew/bin/brew" "${BREW_LINK}"
 
 actual_remote="$(git -C "${REPOSITORY}" remote get-url origin)"
 if [[ "${actual_remote}" != "${CLIENT_REMOTE}" ]]
@@ -150,7 +180,6 @@ then
   exit 1
 fi
 
-git -C "${REPOSITORY}" remote set-head origin --auto >/dev/null
 actual_head="$(git -C "${REPOSITORY}" symbolic-ref --short refs/remotes/origin/HEAD)"
 if [[ "${actual_head}" != "origin/${EXPECTED_BRANCH}" ]]
 then
@@ -158,5 +187,6 @@ then
   exit 1
 fi
 
-"${PREFIX}/bin/brew" --version
+HOMEBREW_NO_ANALYTICS=1 "${BREW_LINK}" update --force --quiet
+"${BREW_LINK}" --version
 echo "x86MacBrew experimental bootstrap completed. Run brew update, then tap x86macbrew/x86mac."

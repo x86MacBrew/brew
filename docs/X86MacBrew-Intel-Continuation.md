@@ -41,26 +41,27 @@ future macOS version is supported.
 
 ## Experimental bootstrap prototype
 
-`install-x86macbrew.sh` pins a reviewed `Homebrew/install` revision, verifies
-its checksum and points a fresh Intel macOS installation at the x86MacBrew
-client remote. It defaults to `--dry-run` and refuses to overwrite an existing
-`/usr/local/Homebrew` checkout.
+`install-x86macbrew.sh` owns the Intel bootstrap rather than invoking
+`Homebrew/install`, which no longer accepts Intel macOS. It verifies the
+published x86MacBrew client tag, clones that tag into `/usr/local/Homebrew`,
+configures the x86MacBrew remote and creates the standard `brew` link. It
+defaults to `--dry-run` and refuses to overwrite an existing Homebrew checkout
+or `brew` link.
 
-The pinned installer checks out the newest release tag, and only after it has
-created `/usr/local/Homebrew`, so the script checks that tag first. It refuses
-when there is no release tag or when the newest tag is not an x86MacBrew
-release, before anything on the host changes.
+The bootstrap checks the newest release tag before changing the host. It
+refuses when there is no release tag or when the newest tag is not an
+x86MacBrew release.
 
-The actual `--experimental-install` path has not yet passed a clean-host
-installation test. It is not the published migration path and must not be
-presented as a production installer until that evidence exists.
+The actual `--experimental-install` path must pass the hosted Intel validation
+workflow and an independent physical Intel-host test before it is presented as
+a production installer.
 
 ## How `brew update` chooses a revision
 
 For non-developer users, `brew update` sets `HOMEBREW_UPDATE_TO_TAG` and moves
 to the newest tag matching `X.Y.Z`. It follows `refs/remotes/origin/HEAD` only
-when no such tag exists. The pinned Homebrew installer also checks out the
-newest tag and aborts when there is none.
+when no such tag exists. The x86MacBrew bootstrap also checks out the newest
+tag and aborts when there is none.
 
 The GitHub default branch must still be `x86macbrew-intel-2027`, which covers
 clones that have no release tag. Once release tags exist, they decide what
