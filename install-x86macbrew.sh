@@ -189,4 +189,8 @@ fi
 
 HOMEBREW_NO_ANALYTICS=1 "${BREW_LINK}" update --force --quiet
 "${BREW_LINK}" --version
-echo "x86MacBrew experimental bootstrap completed. Run brew update, then tap x86macbrew/x86mac."
+printf '%s\n' \
+  'x86MacBrew experimental bootstrap completed.' \
+  'Before using the official x86MacBrew tap, run:' \
+  '  brew trust x86macbrew/x86mac' \
+  '  brew tap x86macbrew/x86mac'

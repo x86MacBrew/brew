@@ -26,6 +26,7 @@ On 2026-09-11, a fresh isolated checkout of this client successfully ran:
 ```sh
 brew config
 brew update
+brew trust x86macbrew/x86mac
 brew tap x86MacBrew/x86Mac
 brew install x86MacBrew/x86Mac/x86macbrew-doctor
 brew upgrade x86MacBrew/x86Mac/x86macbrew-doctor
@@ -35,6 +36,12 @@ x86macbrew-doctor --json
 The doctor reported four passing checks: `x86_64` architecture, macOS major
 version 15, `/usr/local` as the normal Homebrew prefix, and the SSSE3 CPU
 baseline.
+
+Current Homebrew requires an explicit local trust decision before it loads
+formulae from a non-official tap. `brew trust x86macbrew/x86mac` records only
+the named x86MacBrew tap in the user's local trust store; it does not disable
+tap trust generally. Review the tap's repository and release policy before
+making that decision.
 
 This is a compatibility baseline, not a promise that every formula, cask, or
 future macOS version is supported.
@@ -115,6 +122,7 @@ Intel prefix:
 ```sh
 brew config
 brew update
+brew trust x86macbrew/x86mac
 brew tap x86MacBrew/x86Mac
 brew install x86MacBrew/x86Mac/x86macbrew-doctor
 brew upgrade x86MacBrew/x86Mac/x86macbrew-doctor

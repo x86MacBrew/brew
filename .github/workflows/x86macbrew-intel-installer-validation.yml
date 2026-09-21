@@ -153,6 +153,17 @@ jobs:
       - name: Install and run x86macbrew-doctor from source
         run: |
           brew=/usr/local/bin/brew
+          "$brew" trust x86macbrew/x86mac 2>&1 | tee "$EVIDENCE_DIR/brew-trust.log"
+          "$brew" trust --json=v1 | tee "$EVIDENCE_DIR/brew-trust.json"
+          python3 - "$EVIDENCE_DIR/brew-trust.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          trust = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          if "x86macbrew/x86mac" not in trust.get("taps", []):
+              raise SystemExit("x86MacBrew tap was not explicitly trusted")
+          PY
           "$brew" tap x86macbrew/x86mac 2>&1 | tee "$EVIDENCE_DIR/brew-tap.log"
           "$brew" install --build-from-source x86macbrew/x86mac/x86macbrew-doctor \
             2>&1 | tee "$EVIDENCE_DIR/brew-install-doctor.log"
