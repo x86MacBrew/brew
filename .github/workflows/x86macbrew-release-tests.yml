@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - tag-x86macbrew-release.sh
+      - install-x86macbrew.sh
       - .github/scripts/test-x86macbrew-release-tags.sh
       - .github/scripts/test-x86macbrew-installer-preflight.sh
       - .github/workflows/x86macbrew-intel-installer-validation.yml
       - .github/workflows/x86macbrew-release-tests.yml
+      - docs/X86MacBrew-Intel-Continuation.md
   push:
     branches: [x86macbrew-intel-2027]
 
